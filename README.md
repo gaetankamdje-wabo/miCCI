@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.4.3-green)](DESCRIPTION)
 
-> **In plain language**: German hospitals routinely strip diagnosis codes down to three characters before sharing data for research. That truncation makes it impossible to calculate the Charlson Comorbidity Index (CCI) accurately. miCCI fixes that. It offers six validated methods — from a simple rule-based estimate to a machine learning model — each producing a CCI score from those shortened codes with well-characterized accuracy.
+> **In plain language**: German hospitals routinely strip diagnosis codes down to three characters due to data privacy reasons (applying for example k-anonymity, l-diversity, etc.), before sharing data for research. That truncation makes it impossible to calculate the Charlson Comorbidity Index (CCI) accurately. miCCI fixes that. It provides six computational methods - from a simple rule-based estimate to a machine learning model — each producing a CCI score from those shortened codes with well-characterized accuracy.
 
 ---
 
@@ -26,13 +26,13 @@
 
 ## What problem does this solve?
 
-The **Charlson Comorbidity Index** is the most widely used tool for quantifying how sick a patient is based on their diagnoses [1]. It assigns a numeric weight to 17 chronic conditions — from 1 for myocardial infarction to 6 for AIDS or metastatic cancer — and sums them into a single score predicting mortality and resource use [2].
+The **Charlson Comorbidity Index** is the most widely used tool for quantifying how sick a patient is based on their diagnoses [1]. It assigns a numeric weight to 17 chronic conditions, so from 1 for myocardial infarction to 6 for AIDS or metastatic cancer; and sums them into a single score predicting mortality and resource use [2].
 
-Computing CCI correctly requires the full four-digit ICD code. For example, `E11.40` (diabetic nephropathy) clearly maps to the *complicated diabetes* group (weight 2). The code `E11.90` (simple type-2 diabetes, no complications) maps to *simple diabetes* (weight 1). The three-character prefix `E11` alone is ambiguous.
+Computing CCI correctly requires the full-digit ICD code. For example, `E11.40` (diabetic nephropathy) clearly maps to the *complicated diabetes* group (weight 2). The code `E11.90` (simple type-2 diabetes, no complications) maps to *simple diabetes* (weight 1). The three-character prefix `E11` alone is ambiguous.
 
-German law (§21 KHEntgG) mandates that inpatient diagnoses transmitted for secondary analysis are truncated to exactly three characters [3]. The result is that researchers working with routine hospital data — roughly **17 million inpatient cases per year in Germany** — cannot calculate CCI at all, or accept systematic error by ignoring the ambiguity.
+German law (§21 KHEntgG), however, mandates that inpatient diagnoses transmitted for secondary analysis are truncated to exactly three characters [3]. The result is that researchers working with routine hospital data — roughly **17 million inpatient cases per year in Germany** — cannot calculate CCI at all, or have to accept systematic error by ignoring the ambiguity.
 
-miCCI resolves this by modeling the truncation probabilistically, using national frequency data from the German Federal Statistical Office (Destatis 23131-01) as a prior distribution over which four-digit subcode was actually documented [4].
+miCCI can aid resolving this by modeling the truncation probabilistically, using national frequency data from the German Federal Statistical Office (Destatis 23131-01) as a prior distribution over which four-digit subcode was actually documented [4].
 
 ---
 
