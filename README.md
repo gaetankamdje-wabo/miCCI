@@ -1,10 +1,10 @@
-# miCCI — Charlson Comorbidity Index from Anonymized ICD-10-GM Codes
+# miCCI: Charlson Comorbidity Index from Anonymized ICD-10-GM Codes
 
 [![R package](https://img.shields.io/badge/R-%3E%3D%204.1.0-blue)](https://cran.r-project.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.4.3-green)](DESCRIPTION)
 
-> **In plain language**: German hospitals routinely strip diagnosis codes down to three characters due to data privacy reasons (applying for example k-anonymity, l-diversity, etc.), before sharing data for research. That truncation makes it impossible to calculate the Charlson Comorbidity Index (CCI) accurately. miCCI provides approaches for fixing that. It offers six computational methods: from a simple rule-based estimate to a machine learning model — each producing a CCI score from those shortened codes with well-characterized accuracy.
+> **In plain language**: German hospitals routinely strip diagnosis codes down to three characters due to data privacy reasons (applying for example k-anonymity, l-diversity, etc.), before sharing data for research. That truncation makes it impossible to calculate the Charlson Comorbidity Index (CCI) accurately. miCCI provides approaches for fixing that. It offers six computational methods: from a simple rule-based estimate to a machine learning model- each producing a CCI score from those shortened codes with well-characterized accuracy.
 
 ---
 
