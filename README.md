@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.4.3-green)](DESCRIPTION)
 
-> **In plain language**: German hospitals routinely strip diagnosis codes down to three characters due to data privacy reasons (applying for example k-anonymity, l-diversity, etc.), before sharing data for research. That truncation makes it impossible to calculate the Charlson Comorbidity Index (CCI) accurately. miCCI provides approaches for fixing that. It offers six computational methods: from a simple rule-based estimate to a machine learning model- each producing a CCI score from those shortened codes with well-characterized accuracy.
+> **Rationale**: German hospitals routinely strip diagnosis codes down to three characters due to data privacy reasons (applying for example k-anonymity, l-diversity, etc.), before sharing data for research. That truncation makes it impossible to calculate the Charlson Comorbidity Index (CCI) accurately. miCCI provides approaches for fixing that. It offers six computational methods: from a simple rule-based estimate to a machine learning model- each producing a CCI score from those shortened codes with well-characterized accuracy.
 
 ---
 
@@ -60,15 +60,14 @@ miCCI can aid resolving this by using advanced computational methods, to model t
 install.packages("devtools")
 
 # Step 2 — install miCCI directly from GitHub
-# Replace the placeholder below with the actual repository URL
-devtools::install_github("PLACEHOLDER/miCCI")
+devtools::install_github("https://github.com/gaetankamdje-wabo/miCCI")
 ```
 
 ### From a local clone
 
 ```bash
 # Step 1 — clone the repository to your machine
-git clone https://github.com/PLACEHOLDER/miCCI.git
+git clone https://github.com/gaetankamdje-wabo/miCCI.git
 
 # Step 2 — open R and install from the local folder
 ```
