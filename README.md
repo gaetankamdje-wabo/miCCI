@@ -30,9 +30,9 @@ The **Charlson Comorbidity Index** is the most widely used tool for quantifying 
 
 Computing CCI correctly requires the full-digit ICD code. For example, `E11.40` (diabetic nephropathy) clearly maps to the *complicated diabetes* group (weight 2). The code `E11.90` (simple type-2 diabetes, no complications) maps to *simple diabetes* (weight 1). The three-character prefix `E11` alone is ambiguous.
 
-German law (§21 KHEntgG), however, mandates that inpatient diagnoses transmitted for secondary analysis are truncated to exactly three characters [3]. The result is that researchers working with routine hospital data — roughly **17 million inpatient cases per year in Germany** — cannot calculate CCI at all, or have to accept systematic error by ignoring the ambiguity.
+German law, however, requires hospitals to report full diagnostic detail for billing under § 21 KHEntgG, yet data privacy regulations for external researchers often mandate a reduction to 3-digit ICD codes [3]. For instance, for the 17 million annual inpatient cases, this may create an important granularity gap. This makes the accurate computation of the CCI difficult, and leads often to a systematic underestimation or overestimation of the true comorbid burden.
 
-miCCI can aid resolving this by modeling the truncation probabilistically, using national frequency data from the German Federal Statistical Office (Destatis 23131-01) as a prior distribution over which four-digit subcode was actually documented [4].
+miCCI can aid resolving this by using advanced computational methods, to model the truncation probabilistically, using for example the national frequency data from the German Federal Statistical Office (Destatis 23131-01) as a prior distribution over which four-digit subcode was actually documented [4].
 
 ---
 
