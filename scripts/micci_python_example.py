@@ -43,7 +43,7 @@ except Exception as e:
     sys.exit(
         f"Could not load miCCI: {e}\n"
         "Install the package in R first:\n"
-        "    devtools::install_github('PLACEHOLDER/miCCI')"
+        "    devtools::install_github('https://github.com/gaetankamdje-wabo/miCCI')"
     )
 
 dt = importr("data.table")
