@@ -40,7 +40,7 @@ miCCI can aid resolving this by using advanced computational methods, to model t
 
 | Strategy | Method | Needs Destatis? | Needs training data? | Speed | Best for |
 |---|---|:---:|:---:|---|---|
-| **S1** Interval | ICD hierarchy logic | No | No | ~5 s / 500k | Uncertainty bounds, no external data |
+| **S1** Interval | ICD hierarchy logic: This non-statistical approach calculates a CCI range by identifying "certain" versus "possible" Charlson groups for each 3-character prefix and uses the interval midpoint as the point estimate. | No | No | ~5 s / 500k | Uncertainty bounds, no external data |
 | **S2** Probabilistic | Expected value | Yes | No | ~5 s / 500k | Fast, good approximation |
 | **S3** MI-CCI | Multiple imputation | Yes | No | ~4 h / 500k | Best point accuracy |
 | **S4** Bayesian | Dirichlet posterior | Yes | No | ~8 h / 500k | Downstream Bayesian analysis |
