@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.4.3-green)](DESCRIPTION)
 
-> **In plain language**: German hospitals routinely strip diagnosis codes down to three characters due to data privacy reasons (applying for example k-anonymity, l-diversity, etc.), before sharing data for research. That truncation makes it impossible to calculate the Charlson Comorbidity Index (CCI) accurately. miCCI fixes that. It provides six computational methods - from a simple rule-based estimate to a machine learning model — each producing a CCI score from those shortened codes with well-characterized accuracy.
+> **In plain language**: German hospitals routinely strip diagnosis codes down to three characters due to data privacy reasons (applying for example k-anonymity, l-diversity, etc.), before sharing data for research. That truncation makes it impossible to calculate the Charlson Comorbidity Index (CCI) accurately. miCCI provides approaches for fixing that. It offers six computational methods: from a simple rule-based estimate to a machine learning model — each producing a CCI score from those shortened codes with well-characterized accuracy.
 
 ---
 
