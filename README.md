@@ -41,11 +41,11 @@ miCCI can aid resolving this by using advanced computational methods, to model t
 | Strategy | Method | Needs Destatis? | Needs training data? | Speed | Best for |
 |---|---|:---:|:---:|---|---|
 | **S1** Interval | ICD hierarchy logic: This non-statistical approach calculates a CCI range by identifying "certain" versus "possible" Charlson groups for each 3-character prefix and uses the interval midpoint as the point estimate. | No | No | ~5 s / 500k | Uncertainty bounds, no external data |
-| **S2** Probabilistic | Expected value | Yes | No | ~5 s / 500k | Fast, good approximation |
-| **S3** MI-CCI | Multiple imputation | Yes | No | ~4 h / 500k | Best point accuracy |
-| **S4** Bayesian | Dirichlet posterior | Yes | No | ~8 h / 500k | Downstream Bayesian analysis |
-| **S5** ML-CCI | XGBoost | Yes | **Yes** | ~75 s train | Orthogonal signal in ensemble |
-| **S6** Ensemble | NNLS meta-learner | — | **Yes (S1-S5)** | Instant | Maximum R² |
+| **S2** Probabilistic | Expected value: This strategy uses national frequency data to assign continuous probability weights to each prefix, producing a deterministic expected-value estimate in a single vectorized pass. | Yes | No | ~5 s / 500k | Fast, good approximation |
+| **S3** MI-CCI | Multiple imputation: Treating truncation as a missing data problem, this method draws 20 independent 4-digit subcodes per prefix from the national distribution and averages the resulting gold-standard CCI values.| Yes | No | ~4 h / 500k | Best point accuracy |
+| **S4** Bayesian | Dirichlet posterior: This approach samples subcodes from a posterior Dirichlet distribution that combines national priors with Jeffreys-type regularization, using the posterior median across 25 draws as the final estimate.| Yes | No | ~8 h / 500k | Downstream Bayesian analysis |
+| **S5** ML-CCI | XGBoost: An XGBoost model predicts the gold-standard CCI by training on 3-character indicators and clinical features, followed by isotonic regression for post-hoc calibration. | Yes | **Yes** | ~75 s train | Orthogonal signal in ensemble |
+| **S6** Ensemble | NNLS meta-learner: This strategy combines the predictions of S1 through S5 using a Non-Negative Least Squares meta-learner to assign optimal, non-negative weights that minimize estimation error.| — | **Yes (S1-S5)** | Instant | Maximum R² |
 
 > **Validated results (n=144,660 prospective):** S3 MAE=0.136, R²=0.973 · S4 MAE=0.135 · S6 R²=0.974 · S1 interval coverage=95.1%
 
