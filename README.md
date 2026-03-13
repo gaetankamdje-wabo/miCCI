@@ -459,5 +459,5 @@ If you use miCCI in published research, please cite:
 
 ## License
 
-MIT © 2024 Gaetan Kamdje Wabo, Piotr Sokolowski, Fabian Siegel, Thomas Ganslandt.
+MIT © 2026 Gaetan Kamdje Wabo et al.
 See [LICENSE](LICENSE) for full terms.
