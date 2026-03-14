@@ -5,7 +5,7 @@
 // For each truncated code, estimates the posterior probability distribution
 // over K possible subcodes, given:
 //   - Prior: Destatis population frequencies (Dirichlet)
-//   - Data:  Covariate-adjusted likelihood (sex, age, LOS decile)
+//   - Data:  Covariate-adjusted likelihood (age, LOS decile)
 //
 // The posterior subcode probabilities are then mapped to Charlson groups.
 // =============================================================================
