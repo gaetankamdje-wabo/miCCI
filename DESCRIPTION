@@ -1,16 +1,17 @@
 Package: miCCI
-Title: Charlson Comorbidity Index Estimation from Anonymized ICD-10-GM Codes
+Title: Charlson Comorbidity Index Estimation from Anonymized ICD-10 Codes
 Version: 0.4.3
 Authors@R: c(
     person("Gaetan", "Kamdje Wabo",
            email  = "gaetan.kamdjewabo@medma.uni-heidelberg.de",
            role   = c("aut", "cre")),
+    person("Nandhini", "Santhanam",   role = "aut"))
     person("Piotr",  "Sokolowski",  role = "aut"),
-    person("Fabian", "Siegel",      role = "aut"),
-    person("Thomas", "Ganslandt",   role = "aut"))
+    person("Thomas", "Ganslandt",   role = "aut")),
+    person("Fabian", "Siegel",      role = "aut")
 Description: Six validated computational strategies for reconstructing the
-    Charlson Comorbidity Index (CCI) from 3-character truncated ICD-10-GM
-    codes, as mandated by German secondary-use data regulations (SS21 KHEntgG).
+    Charlson Comorbidity Index (CCI) from 3-character truncated ICD-10
+    codes, as mandated by EU Genaral Data Protection Regulations.
     Strategies range from a fully deterministic interval estimator (S1) through
     probabilistic expected-value estimation (S2), multiple imputation (S3),
     Bayesian Dirichlet inference (S4), XGBoost machine learning (S5), to a
