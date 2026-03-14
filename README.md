@@ -591,7 +591,7 @@ Tests print a label for every check, describing **what** is being tested and **w
 
 If you use miCCI in published research, please cite:
 
-> Kamdje Wabo G, Sokolowski P, Ganslandt T, Siegel F. Estimating the Charlson
+> Kamdje Wabo G, Nandhini S., Sokolowski P, Ganslandt T, Siegel F. Estimating the Charlson
 > Comorbidity Index from anonymized diagnosis codes while preserving data quality:
 > development and validation of six computational strategies. *JMIR Medical Informatics*.
 > 2026 (in preparation).
