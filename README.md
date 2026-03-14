@@ -522,13 +522,13 @@ str(micci_patients)
 
 The dataset covers:
 
-- **Rows 1-5**: Healthy patients (CCI = 0) — hypertension, respiratory infections, back pain
-- **Rows 6-13**: Single comorbidity (CCI = 1) — MI, HF, COPD, simple DM, cerebrovascular disease
-- **Rows 14-18**: Moderate burden (CCI = 2) — complicated DM, kidney disease, cancer, hemiplegia
-- **Rows 19-20**: CCI = 3 — severe liver disease, triple comorbidity
+- **Rows 1-5**: Healthy patients (CCI = 0): hypertension, respiratory infections, back pain
+- **Rows 6-13**: Single comorbidity (CCI = 1): MI, HF, COPD, simple DM, cerebrovascular disease
+- **Rows 14-18**: Moderate burden (CCI = 2): complicated DM, kidney disease, cancer, hemiplegia
+- **Rows 19-20**: CCI = 3: severe liver disease, triple comorbidity
 - **Rows 21-30**: High burden (CCI = 4 to 17)
-- **Rows 31-34**: `depends_on` hierarchy test cases — verify suppression logic
-- **Rows 35-39**: Edge cases — rheumatic disease, dementia variants, heart failure subtypes
+- **Rows 31-34**: `depends_on` hierarchy test cases: verify suppression logic
+- **Rows 35-39**: Edge cases: rheumatic disease, dementia variants, heart failure subtypes
 
 ---
 
