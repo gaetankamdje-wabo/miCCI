@@ -92,7 +92,7 @@ install.packages("arrow")
 
 ### Python users
 
-miCCI is an R package. Python users can call via the following ways:
+miCCI is an R package. Python users can call via the following ways (Jupyter Notebook or Google Colab):
 
 ```python
 
