@@ -92,11 +92,11 @@ install.packages("arrow")
 
 ### Python users
 
-miCCI is an R package. Python users can call it via the `rpy2` bridge:
+miCCI is an R package. Python users can call via the following ways:
 
 ```python
 
-# ║  Cell 1 — run once to install everything         
+#  Cell 1 — run once to install everything         
 
 # !apt-get install -y -q r-base
 # !pip install -q rpy2 pandas matplotlib
@@ -145,7 +145,7 @@ def run_r(code):
     try:    ro.r(f'source("{f.name}")')
     finally: os.unlink(f.name)
 
-# ── single patient (the README example — now working) ─────────────────────────
+# ── single patient ─────────────────────────
 result = micci.cci_gold(ro.StrVector(["E11.40", "N18.4", "I21.0"]), qm)
 print("Gold CCI:", rval(result.rx2("cci")),
       " | active groups:", list(result.rx2("active").names))
