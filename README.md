@@ -13,7 +13,7 @@
 1. [What problem does this solve?](#what-problem-does-this-solve)
 2. [The six strategies at a glance](#the-six-strategies-at-a-glance)
 3. [Installation](#installation)
-4. [Quick start — five minutes to your first result](#quick-start)
+4. [Quick start](#quick-start)
 5. [Using each strategy independently](#using-each-strategy-independently)
 6. [Using all strategies together](#using-all-strategies-together)
 7. [Built-in dummy dataset](#built-in-dummy-dataset)
@@ -105,7 +105,7 @@ miCCI is an R package. Python users can call via the following ways:
 # !Rscript -e "remotes::install_local('miCCI', upgrade='never')"
 
 
-# ║  Cell 2 — run the session                        
+#  Cell 2 — run the session                        
 
 
 import os, tempfile
@@ -330,7 +330,7 @@ destatis <- load_destatis()
 cache <- precompute_lookups(destatis, quan_map)
 ```
 
-### Gold-standard CCI (from full 4-digit codes)
+### Gold-standard CCI (from full digit codes)
 
 ```r
 # Single patient — full 4-digit codes as a character vector
@@ -350,7 +350,7 @@ gold_vec <- cci_gold_batch(patients, quan_map, pl, dl)
 print(gold_vec)  # 5 2 0
 ```
 
-### S1 — Interval estimator (no external data needed)
+### S1: Interval estimator (no external data needed)
 
 ```r
 # Single patient — input is 3-character anonymized codes
@@ -368,7 +368,7 @@ print(s1_batch)
 # 3:       0       0     0.0              0
 ```
 
-### S2 — Probabilistic expected value
+### S2: Probabilistic expected value
 
 ```r
 # Single patient
@@ -380,7 +380,7 @@ s2_vec <- cci_probabilistic_batch(patients_anon, quan_map, cache)
 print(s2_vec)
 ```
 
-### S3 — Multiple Imputation (best accuracy, slowest)
+### S3: Multiple Imputation (best accuracy, slowest)
 
 ```r
 # Single patient — m=20 for production, m=5 for quick testing
@@ -392,7 +392,7 @@ s3_vec <- cci_mi_batch(patients_anon, quan_map, cache, m = 5)
 print(s3_vec)
 ```
 
-### S4 — Bayesian Dirichlet estimator
+### S4: Bayesian Dirichlet estimator
 
 ```r
 # Single patient
@@ -404,7 +404,7 @@ s4_vec <- cci_bayesian_batch(patients_anon, quan_map, cache, n_draws = 5)
 print(s4_vec)
 ```
 
-### S5 — XGBoost machine learning
+### S5: XGBoost machine learning
 
 ```r
 # S5 requires a training set with gold-standard CCI labels
@@ -427,7 +427,7 @@ s5_vec <- cci_ml_predict(ml_model, dt_anon, quan_map)
 print(s5_vec)
 ```
 
-### S6 — NNLS Ensemble (requires S1-S5 outputs)
+### S6: NNLS Ensemble (requires S1-S5 outputs)
 
 ```r
 # IMPORTANT: S6 takes the predictions of S1-S5 as its input,
@@ -541,7 +541,7 @@ library(miCCI)
 
 run_pipeline(
   data_path   = "A:/HLZ/Projekt/2025/comorbidity_gaetan/comorbidity_diagnoses_only_pseudonym.parquet",
-  output_dir  = "results/",
+  output_dir  = "results/", # add the target folder
   sample_size = NULL    # Set to e.g. 10000 for a quick test run
 )
 ```
@@ -591,10 +591,10 @@ Tests print a label for every check, describing **what** is being tested and **w
 
 If you use miCCI in published research, please cite:
 
-> Kamdje Wabo G, Sokolowski P, Siegel F, Ganslandt T. Estimating the Charlson
+> Kamdje Wabo G, Sokolowski P, Ganslandt T, Siegel F. Estimating the Charlson
 > Comorbidity Index from anonymized diagnosis codes while preserving data quality:
 > development and validation of six computational strategies. *JMIR Medical Informatics*.
-> 2025 (in preparation).
+> 2026 (in preparation).
 
 ### References
 
