@@ -5,10 +5,9 @@ Authors@R: c(
     person("Gaetan", "Kamdje Wabo",
            email  = "gaetan.kamdjewabo@medma.uni-heidelberg.de",
            role   = c("aut", "cre")),
-    person("Nandhini", "Santhanam",   role = "aut"),
     person("Piotr",  "Sokolowski",  role = "aut"),
-    person("Thomas", "Ganslandt",   role = "aut"),
-    person("Fabian", "Siegel",      role = "aut"))
+    person("Fabian", "Siegel",      role = "aut"),
+    person("Thomas", "Ganslandt",   role = "aut"))
 Description: Six validated computational strategies for reconstructing the
     Charlson Comorbidity Index (CCI) from 3-character truncated ICD-10
     codes, as mandated by EU Genaral Data Protection Regulations.
