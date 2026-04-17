@@ -1,41 +1,35 @@
 Package: miCCI
-Title: Charlson Comorbidity Index Estimation from Anonymized ICD-10 Codes
-Version: 0.4.3
+Title: Quality-Preserving Charlson Comorbidity Index Estimation Under Diagnosis Anonymisation
+Version: 1.0.0
 Authors@R: c(
-    person("Gaetan", "Kamdje Wabo",
-           email  = "gaetan.kamdjewabo@medma.uni-heidelberg.de",
-           role   = c("aut", "cre")),
-    person("Piotr",  "Sokolowski",  role = "aut"),
-    person("Fabian", "Siegel",      role = "aut"),
-    person("Thomas", "Ganslandt",   role = "aut"))
-Description: Six validated computational strategies for reconstructing the
-    Charlson Comorbidity Index (CCI) from 3-character truncated ICD-10
-    codes, as mandated by EU Genaral Data Protection Regulations.
-    Strategies range from a fully deterministic interval estimator (S1) through
-    probabilistic expected-value estimation (S2), multiple imputation (S3),
-    Bayesian Dirichlet inference (S4), XGBoost machine learning (S5), to a
-    Non-Negative Least Squares ensemble meta-learner (S6).
-    Reference frequencies come from the German Federal Statistical Office
-    (Destatis 23131-01). The Charlson mapping follows Quan et al. (2005)
-    <doi:10.1097/01.mlr.0000182534.19832.83>.
+    person("Gaetan", "Kamdje Wabo", email = "gaetan.kamdjewabo@medma.uni-heidelberg.de",
+           role = c("aut", "cre")),
+    person("Piotr", "Sokolowski", role = "aut"),
+    person("Fabian", "Siegel", role = "aut"))
+Description: Five computational strategies for reconstructing the
+    Charlson Comorbidity Index (CCI) from truncated (anonymised)
+    ICD-10-GM codes. S1 deterministic interval, S2 single-pass
+    probabilistic heuristic, S3 multiple imputation, S4 Bayesian
+    Dirichlet prior median, and S5 (Meta Learner) a cross-validated
+    Super Learner combining S1 to S4 via non-negative least squares
+    (van der Laan, Polley & Hubbard 2007). Reference population
+    frequencies from the German Federal Statistical Office
+    (Destatis 23131-01). CCI mapping based on Quan et al. (2005).
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Depends: R (>= 4.1.0)
 Imports:
-    data.table (>= 1.14.0),
-    jsonlite   (>= 1.8.0),
-    readxl     (>= 1.4.0),
-    xgboost    (>= 1.7.0),
-    nnls       (>= 1.4),
-    ggplot2    (>= 3.4.0)
+    data.table,
+    jsonlite,
+    readxl,
+    arrow,
+    ggplot2,
+    SuperLearner
 Suggests:
-    arrow       (>= 12.0.0),
-    testthat    (>= 3.0.0),
-    knitr,
-    rmarkdown
+    testthat (>= 3.0.0),
+    devtools,
+    future.apply,
+    scales
 Config/testthat/edition: 3
 RoxygenNote: 7.3.2
-VignetteBuilder: knitr
-URL: https://github.com/gaetankamdje-wabo/miCCI
-BugReports: https://github.com/gaetankamdje-wabo/miCCI/issues

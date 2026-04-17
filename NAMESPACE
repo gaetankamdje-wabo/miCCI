@@ -1,29 +1,41 @@
-# Generated — do not edit by hand
+export(cci_interval)
+export(cci_probabilistic)
+export(cci_mi)
+export(cci_bayesian)
+export(cci_meta_fit)
+export(cci_gold)
 export(load_quan_map)
-export(build_pattern_lookup)
-export(build_dep_lookup)
 export(load_destatis)
 export(precompute_lookups)
-export(cci_gold)
-export(cci_gold_batch)
-export(cci_interval)
-export(cci_interval_batch)
-export(cci_probabilistic)
-export(cci_probabilistic_batch)
-export(cci_mi)
-export(cci_mi_batch)
-export(cci_bayesian)
-export(cci_bayesian_batch)
-export(cci_ml_train)
-export(cci_ml_predict)
-export(cci_ensemble_train)
-export(cci_ensemble)
-export(eval_metrics)
-export(run_pipeline)
-export(run_demo)
-importFrom(data.table, data.table, as.data.table, setkey, fwrite, fread,
-           rbindlist, melt, frank, setorder, uniqueN, setnames, setDT,
-           fsetdiff)
-importFrom(jsonlite, fromJSON)
+export(load_cohort)
+export(compute_predictions)
+export(load_predictions)
+
+# S3 method for the pass-through learner (required by SuperLearner)
+S3method(predict, SL_passthrough)
+
+# Stage-2 report pipeline
+export(build_report)
+
+# Bootstrap CI helpers
+export(bootstrap_metrics)
+export(bootstrap_strategies)
+
+# QA / distributional plausibility
+export(qa_group_coverage)
+export(qa_score_distribution)
+export(qa_posterior_coverage)
+
+# Stratified evaluation
+export(stratified_evaluation)
+export(stratum_winners)
+
+importFrom(data.table, data.table, fread, fwrite, as.data.table, setDT,
+           setkey, setnames, setorder, setorderv, rbindlist, dcast, melt, copy,
+           fifelse, fcase, uniqueN, frank, fsetdiff, .N, .SD)
+importFrom(jsonlite, fromJSON, toJSON)
 importFrom(readxl, read_excel)
-importFrom(nnls, nnls)
+importFrom(SuperLearner, SuperLearner, All)
+importFrom(stats, predict, setNames, var, median, quantile, sd,
+           rgamma, ks.test, density, gaussian)
+importFrom(utils, download.file, capture.output, sessionInfo)

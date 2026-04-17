@@ -1,7 +1,7 @@
 # =============================================================================
-# miCCI — 40_cci_bayesian.R
-# S4: Bayesian CCI — VECTORISED: Dirichlet draws in bulk + vectorised CCI
-# Same architecture as S3: draw n_draws datasets, batch-CCI each.
+# miCCI v1.0.0 — 40_cci_bayesian.R
+# S4: Bayesian CCI — Dirichlet draws, vectorised gold per draw, posterior median
+# v1.0 change: returns raw float vector (no round())
 # =============================================================================
 
 #' @export
@@ -29,10 +29,10 @@ cci_bayesian <- function(icd_anon, quan_map, cache,
     }
     draws[d] <- cci_gold(imputed, quan_map)$cci
   }
-  list(posterior_median = round(median(draws), 2))
+  list(posterior_median = median(draws))
 }
 
-#' VECTORISED S4: Dirichlet bulk draws + vectorised CCI
+#' VECTORISED S4 — Dirichlet bulk draws; returns float vector
 cci_bayesian_batch <- function(dt, quan_map, cache,
                                n_draws = 25L, alpha_0 = 10, seed = 42L) {
   set.seed(seed)
@@ -45,7 +45,6 @@ cci_bayesian_batch <- function(dt, quan_map, cache,
     unique(substr(toupper(gsub("[^A-Z0-9]", "", x)), 1, 3))
   })
 
-  # Build per-prefix Dirichlet parameters (from cache, ONCE)
   all_prefs <- unique(unlist(code_sets))
   dir_params <- list()
   for (pref in all_prefs) {
@@ -57,18 +56,20 @@ cci_bayesian_batch <- function(dt, quan_map, cache,
       if (nrow(p) == 0) {
         dir_params[[pref]] <- list(alpha = 1, names = pref)
       } else {
-        dir_params[[pref]] <- list(alpha = alpha_0 * p$prob + 0.5, names = p$code_nodot)
+        dir_params[[pref]] <- list(alpha = alpha_0 * p$prob + 0.5,
+                                   names = p$code_nodot)
       }
     }
   }
 
-  message(sprintf("  S4: %d encounters, %d unique prefixes, n_draws=%d", n, length(all_prefs), n_draws))
+  message(sprintf("  S4: %d encounters, %d unique prefixes, n_draws=%d",
+                  n, length(all_prefs), n_draws))
 
-  # Draw n_draws imputed datasets and compute CCI in bulk
   cci_mat <- matrix(0L, nrow = n, ncol = n_draws)
   for (d in seq_len(n_draws)) {
     imputed_dx <- vapply(seq_len(n), function(i) {
       prefs <- code_sets[[i]]
+      if (length(prefs) == 0) return("")
       drawn <- vapply(prefs, function(pref) {
         par <- dir_params[[pref]]
         theta <- rgamma(length(par$alpha), shape = par$alpha, rate = 1)
@@ -82,6 +83,6 @@ cci_bayesian_batch <- function(dt, quan_map, cache,
     cci_mat[, d] <- cci_gold_batch(imp_dt, quan_map, pl, dl)
   }
 
-  # Posterior median per encounter
-  apply(cci_mat, 1, function(x) round(median(x), 2))
+  # Posterior median per encounter (float)
+  apply(cci_mat, 1, median)
 }

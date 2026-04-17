@@ -1,7 +1,7 @@
 # =============================================================================
-# miCCI — 30_cci_mi.R
-# S3: MI-CCI — VECTORISED: draw m imputed datasets in bulk, then batch-CCI
-# Zero per-encounter loops. ~2 min for 500k @ m=20.
+# miCCI v1.0.0 — 30_cci_mi.R
+# S3: MI-CCI — bulk imputation, vectorised gold per draw, mean across draws
+# v1.0 change: returns raw float vector (no round())
 # =============================================================================
 
 #' @export
@@ -23,23 +23,21 @@ cci_mi <- function(icd_anon, quan_map, cache, age = NULL, m = 20L, seed = 42L) {
       character(1))
     cci_values[i] <- cci_gold(imputed, quan_map)$cci
   }
-  list(mi_cci = round(mean(cci_values), 2))
+  list(mi_cci = mean(cci_values))
 }
 
-#' VECTORISED S3: bulk imputation + vectorised CCI
+#' VECTORISED S3 — bulk imputation; returns float vector
 cci_mi_batch <- function(dt, quan_map, cache, m = 20L, seed = 42L) {
   set.seed(seed)
   pl <- build_pattern_lookup(quan_map)
   dl <- build_dep_lookup(quan_map)
   n <- nrow(dt)
 
-  # Step 1: For each encounter, extract 3-char prefixes and build donor pools
   dx_list <- strsplit(as.character(dt$diagnosen), "\\|+")
   code_sets <- lapply(dx_list, function(x) {
     unique(substr(toupper(gsub("[^A-Z0-9]", "", x)), 1, 3))
   })
 
-  # Step 2: Build per-prefix donor pools (from cache, ONCE)
   all_prefs <- unique(unlist(code_sets))
   donor_pools <- list()
   for (pref in all_prefs) {
@@ -52,14 +50,14 @@ cci_mi_batch <- function(dt, quan_map, cache, m = 20L, seed = 42L) {
     }
   }
 
-  message(sprintf("  S3: %d encounters, %d unique prefixes, m=%d", n, length(all_prefs), m))
+  message(sprintf("  S3: %d encounters, %d unique prefixes, m=%d",
+                  n, length(all_prefs), m))
 
-  # Step 3: For each imputation, draw subcodes and compute CCI in bulk
   cci_sum <- numeric(n)
   for (imp in seq_len(m)) {
-    # Draw one subcode per prefix per encounter
     imputed_dx <- vapply(seq_len(n), function(i) {
       prefs <- code_sets[[i]]
+      if (length(prefs) == 0) return("")
       drawn <- vapply(prefs, function(pref) {
         pool <- donor_pools[[pref]]
         add_dot4(pool$code_nodot[sample.int(nrow(pool), 1L, prob = pool$prob)])
@@ -67,10 +65,9 @@ cci_mi_batch <- function(dt, quan_map, cache, m = 20L, seed = 42L) {
       paste(drawn, collapse = "|")
     }, character(1))
 
-    # Compute CCI for all encounters at once using vectorised gold batch
     imp_dt <- data.table(diagnosen = imputed_dx)
     cci_sum <- cci_sum + cci_gold_batch(imp_dt, quan_map, pl, dl)
   }
 
-  round(cci_sum / m, 2)
+  cci_sum / m   # raw float, no round
 }
