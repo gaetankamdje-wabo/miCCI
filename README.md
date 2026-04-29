@@ -21,7 +21,11 @@ you analyse them is up to you.
 
 ```r
 # install.packages("remotes")
+<<<<<<< HEAD
 remotes::install_github("gaetankamdje-wabo/miCCI")
+=======
+remotes::install_github("gaetankamdje-wabo/miCCI", upgrade = "never", force = TRUE)
+>>>>>>> adf22816b010316e769386f5211c7c5ae8866b15
 ```
 
 `SuperLearner` is needed only for the meta learner (`cci_meta_fit`); the
