@@ -16,7 +16,7 @@ strategies and a cross-validated meta learner that combines them.
 
 ```r
 # install.packages("remotes")
-remotes::install_local("miCCI_1.0.0.tar.gz")
+remotes::install_github("gaetankamdje-wabo/miCCI", upgrade = "never", force = TRUE)
 ```
 
 ## Quick start (Destatis as the default reference)
