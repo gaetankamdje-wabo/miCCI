@@ -1,81 +1,114 @@
-# =============================================================================
-# miCCI v0.5.0 — Unit tests for S6 deterministic meta-estimator
-# =============================================================================
 library(testthat)
+library(data.table)
 
-test_that("S6: collapsed interval returns s1_mid exactly", {
-  # s1_width = 0  =>  w = 0  =>  raw = s1_mid  =>  clip = s1_mid
-  out <- cci_meta(s1_min   = c(2, 5, 0),
-                  s1_max   = c(2, 5, 0),
-                  s1_mid   = c(2, 5, 0),
-                  s2_ecci  = c(7, 1, 9),
-                  s3_mi    = c(8, 2, 9),
-                  s4_bayes = c(9, 0, 9))
-  expect_equal(out, c(2, 5, 0))
+skip_if_no_sl <- function() testthat::skip_if_not_installed("SuperLearner")
+
+# Synthetic cohort with independent residuals (S3 best by design).
+.make_synth <- function(n = 300L, seed = 1L) {
+  set.seed(seed)
+  gold <- sample(0:12, n, replace = TRUE, prob = stats::dpois(0:12, lambda = 2))
+  s1_min <- pmax(gold - sample(0:3, n, TRUE, prob = c(0.4, 0.3, 0.2, 0.1)), 0)
+  s1_max <- gold + sample(0:3, n, TRUE, prob = c(0.4, 0.3, 0.2, 0.1))
+  s1_mid <- (s1_min + s1_max) / 2
+  s2_ecci  <- gold + rnorm(n, 0, 0.9)
+  s3_mi    <- gold + rnorm(n, 0, 0.4)   # best
+  s4_bayes <- gold + rnorm(n, 0.05, 0.7)
+  data.table(cci_gold = gold,
+             s1_min = s1_min, s1_max = s1_max, s1_mid = s1_mid,
+             s2_ecci = s2_ecci, s3_mi = s3_mi, s4_bayes = s4_bayes)
+}
+
+# Synthetic cohort with CORRELATED residuals: S3 and S4 share noise.
+# This is the realistic situation - S3/S4 both draw from the same
+# Destatis prior so their residuals are not independent. NNLS behaviour
+# in this regime is the interesting test case.
+.make_synth_correlated <- function(n = 300L, seed = 11L) {
+  set.seed(seed)
+  gold <- sample(0:12, n, replace = TRUE, prob = stats::dpois(0:12, lambda = 2))
+  shared <- rnorm(n, 0, 0.4)            # shared component
+  s1_min <- pmax(gold - 1, 0); s1_max <- gold + 1
+  s1_mid <- (s1_min + s1_max) / 2
+  s2_ecci  <- gold + rnorm(n, 0, 0.9)   # independent
+  s3_mi    <- gold + shared + rnorm(n, 0, 0.2)   # correlated cluster
+  s4_bayes <- gold + shared + rnorm(n, 0.05, 0.2)
+  data.table(cci_gold = gold,
+             s1_min = s1_min, s1_max = s1_max, s1_mid = s1_mid,
+             s2_ecci = s2_ecci, s3_mi = s3_mi, s4_bayes = s4_bayes)
+}
+
+test_that("cci_meta_fit returns the expected list structure", {
+  skip_if_no_sl()
+  d <- .make_synth(200L)
+  res <- cci_meta_fit(d, V = 5L, seed = 42L)
+  expect_named(res, c("predictions", "weights", "cv_risk", "sl_fit"))
+  expect_length(res$predictions, nrow(d))
+  expect_length(res$weights, 4L)
+  expect_named(res$weights, c("S1_mid", "S2_ecci", "S3_mi", "S4_bayes"))
+  expect_length(res$cv_risk, 4L)
 })
 
-test_that("S6: result is always inside the S1 interval", {
-  set.seed(1)
-  n <- 500
-  lo <- runif(n, 0, 10)
-  wd <- runif(n, 0, 8)
-  hi <- lo + wd
-  mid <- (lo + hi) / 2
-  s2 <- runif(n, 0, 20)   # deliberately allowed to escape interval
-  s3 <- runif(n, 0, 20)
-  s4 <- runif(n, 0, 20)
-  out <- cci_meta(lo, hi, mid, s2, s3, s4)
-  expect_true(all(out >= lo - 1e-12))
-  expect_true(all(out <= hi + 1e-12))
+test_that("Meta weights are non-negative and finite", {
+  skip_if_no_sl()
+  d <- .make_synth(200L)
+  res <- cci_meta_fit(d, V = 5L, seed = 42L)
+  expect_true(all(res$weights >= -1e-8))
+  expect_true(all(is.finite(res$weights)))
 })
 
-test_that("S6: monotone in m_dist when interval is wide", {
-  # very wide interval => weight on m_dist is large
-  base <- list(s1_min = 0, s1_max = 30, s1_mid = 15)
-  a <- cci_meta(base$s1_min, base$s1_max, base$s1_mid, 5, 5, 5)
-  b <- cci_meta(base$s1_min, base$s1_max, base$s1_mid, 10, 10, 10)
-  c_ <- cci_meta(base$s1_min, base$s1_max, base$s1_mid, 20, 20, 20)
-  expect_lt(a, b); expect_lt(b, c_)
+test_that("Predictions are numerically sane", {
+  skip_if_no_sl()
+  d <- .make_synth(300L)
+  res <- cci_meta_fit(d, V = 5L, seed = 42L)
+  expect_true(all(is.finite(res$predictions)))
+  expect_true(all(res$predictions >= -1))
+  expect_true(all(res$predictions <= 35))
+  expect_lt(abs(mean(res$predictions) - mean(d$cci_gold)), 1.0)
 })
 
-test_that("S6: kappa controls weight allocation", {
-  # smaller kappa -> trusts m_dist more for the same width
-  out_k1 <- cci_meta(0, 4, 2, 4, 4, 4, kappa = 1)
-  out_k2 <- cci_meta(0, 4, 2, 4, 4, 4, kappa = 2)
-  out_k8 <- cci_meta(0, 4, 2, 4, 4, 4, kappa = 8)
-  # m_dist (=4) > s1_mid (=2): smaller kappa -> closer to 4
-  expect_gt(out_k1, out_k2)
-  expect_gt(out_k2, out_k8)
-  expect_true(all(c(out_k1, out_k2, out_k8) <= 4 + 1e-12))
-  expect_true(all(c(out_k1, out_k2, out_k8) >= 2 - 1e-12))
+test_that("Independent residuals: meta prefers the best learner", {
+  skip_if_no_sl()
+  d <- .make_synth(500L, seed = 7L)
+  res <- cci_meta_fit(d, V = 5L, seed = 42L)
+  expect_gt(res$weights["S3_mi"], res$weights["S2_ecci"])
+  expect_gt(res$weights["S3_mi"], res$weights["S4_bayes"])
 })
 
-test_that("S6: cci_meta_dt wrapper matches positional call", {
-  d <- data.table::data.table(
-    s1_min   = c(0, 1, 3),
-    s1_max   = c(4, 5, 3),
-    s1_mid   = c(2, 3, 3),
-    s2_ecci  = c(2.5, 4, 3),
-    s3_mi    = c(2.7, 4, 3),
-    s4_bayes = c(2.9, 4, 3)
-  )
-  expect_equal(cci_meta_dt(d),
-               cci_meta(d$s1_min, d$s1_max, d$s1_mid,
-                        d$s2_ecci, d$s3_mi, d$s4_bayes))
+test_that("Meta MAE not worse than S3 by more than 20% (oracle property)", {
+  skip_if_no_sl()
+  d <- .make_synth(500L, seed = 7L)
+  res <- cci_meta_fit(d, V = 10L, seed = 42L)
+  mae <- function(x) mean(abs(x - d$cci_gold))
+  expect_lt(mae(res$predictions), 1.20 * mae(d$s3_mi))
 })
 
-test_that("S6: missing column triggers informative error", {
-  d <- data.table::data.table(s1_min = 0, s1_max = 4, s1_mid = 2,
-                              s2_ecci = 2, s3_mi = 2)   # no s4_bayes
-  expect_error(cci_meta_dt(d), "s4_bayes")
+test_that("Correlated residuals: weights sum close to one and finite", {
+  # S3 and S4 share a noise component - the test is whether NNLS still
+  # behaves sanely (no negatives, predictions track gold). It does not
+  # require the weight on a specific learner because under correlated
+  # residuals the meta regression has multiple near-equivalent solutions.
+  skip_if_no_sl()
+  d <- .make_synth_correlated(500L, seed = 11L)
+  res <- cci_meta_fit(d, V = 5L, seed = 42L)
+  expect_true(all(res$weights >= -1e-8))
+  # Sum-to-1 (not exact under NNLS, but very close in practice)
+  expect_lt(abs(sum(res$weights) - 1), 0.05)
+  # Beats the worst single learner
+  mae <- function(x) mean(abs(x - d$cci_gold))
+  expect_lt(mae(res$predictions),
+            max(mae(d$s2_ecci), mae(d$s3_mi), mae(d$s4_bayes), mae(d$s1_mid)))
 })
 
-test_that("S6: returns float, never coerced to integer", {
-  out <- cci_meta(0, 4, 2, 2.7, 2.3, 2.5)
-  expect_type(out, "double")
+test_that("Missing column raises an informative error", {
+  skip_if_no_sl()
+  d <- .make_synth(50L); d[, s4_bayes := NULL]
+  expect_error(cci_meta_fit(d, V = 5L), "s4_bayes")
 })
 
-test_that("S6: handles zero-length input", {
-  expect_equal(length(cci_meta(numeric(0), numeric(0), numeric(0),
-                               numeric(0), numeric(0), numeric(0))), 0L)
+test_that("Degenerate base learners collapse onto gold", {
+  skip_if_no_sl()
+  d <- .make_synth(200L, seed = 3L)
+  for (col in c("s1_min","s1_max","s1_mid","s2_ecci","s3_mi","s4_bayes"))
+    set(d, j = col, value = d$cci_gold)
+  res <- cci_meta_fit(d, V = 5L, seed = 42L)
+  expect_true(all(abs(res$predictions - d$cci_gold) < 1e-8))
 })

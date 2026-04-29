@@ -1,165 +1,123 @@
-# miCCI v0.5.0
+# miCCI — Charlson Comorbidity Index from Anonymized ICD-10-GM Codes
 
-Quality-preserving Charlson Comorbidity Index (CCI) estimation under
-ICD-code anonymisation.
+`miCCI` reconstructs the Charlson Comorbidity Index (CCI) from truncated
+(anonymised) three-character ICD-10-GM codes using five complementary
+strategies and a cross-validated meta learner that combines them.
 
-## What is new in v0.5.0
+| Strategy | Idea | Input |
+|---|---|---|
+| **S1** Interval | Lower / upper / midpoint of the CCI given what the truncated codes alone imply | Frequency table (only as taxonomy) |
+| **S2** Probabilistic | Inclusion–exclusion expected CCI: `P(group active) = 1 − Π(1 − qᵢ)` | Frequency table |
+| **S3** Multiple Imputation | Draw full-length codes from the empirical subcode distribution; recompute gold; mean across `m` draws | Frequency table |
+| **S4** Bayesian | Dirichlet posterior over subcode probabilities; posterior median across `n_draws` | Frequency table |
+| **Meta** | Cross-validated NNLS Super Learner over S1..S4 | Gold and the four strategy outputs |
 
-* **Single consistent cohort 2010-2024.** No train / calibrate / validate
-  split. All strategies are training-free and can be applied to the entire
-  cohort directly.
-* **S5 (XGBoost ML) removed.** Conceptually outside the paper.
-* **S6 reworked into a deterministic meta-estimator** that combines S1-S4
-  on every encounter without any learned parameters
-  (`R/60_cci_meta.R`, formula in the manuscript).
-* **All probabilistic outputs are floats.** Rounding is left to the user.
-* **Two-stage pipeline.** A long compute stage that produces a self-
-  contained predictions artefact, and a fast reporting stage that
-  regenerates every table and plot from that artefact in minutes.
-* **Bootstrap 95% confidence intervals** for MAE / RMSE / R^2 / Bias on
-  every strategy and on every stratum.
-* **Quality-assurance module** comparing the JSON Quan map, the gold
-  standard, and the predictions on coverage / mass conservation /
-  distributional fidelity (Plot 6, Tables 3-6).
-* **Stratified diagnostic-cluster benchmark** identifying the best
-  strategy per ICD chapter, per Charlson group and per multimorbid
-  pattern, with a categorical recommendation per stratum.
-* **Plot 02 (Predicted vs Gold) rewritten** at base font 16, axis text 14,
-  bold facet labels, axes 0-20, per-facet MAE+CI annotation, both PDF
-  (cairo vector) and PNG (300 dpi).
-
-## Two-stage workflow
-
-```
-+----------------------+         +------------------------+
-| 01_run_compute.R     |  -->    | predictions.parquet    |
-| (S1-S4 + S6, ~16h)   |         | run_manifest.json      |
-+----------------------+         +------------------------+
-                                              |
-                                              v
-                                 +------------------------+
-                                 | 02_run_report.R        |
-                                 | (CIs, QA, plots, ~min) |
-                                 +------------------------+
-                                              |
-                                              v
-                                 tab_*.csv  +  fig_*.{pdf,png}
-```
-
-## Run instructions
-
-### 1. Install (one time)
+## Installation
 
 ```r
-# from the unpacked miCCI/ directory
-devtools::install(".")
-# or, without installing:
-# devtools::load_all(".")
+# install.packages("remotes")
+remotes::install_local("miCCI_1.0.0.tar.gz")
 ```
 
-Required packages: `data.table`, `jsonlite`, `readxl`, `arrow`, `ggplot2`.
-Optional: `future.apply` (parallel bootstrap), `scales`.
-
-### 2. Stage 1 — compute predictions (~16 h on the full Mannheim cohort)
-
-Edit `scripts/01_run_compute.R`:
+## Quick start (Destatis as the default reference)
 
 ```r
-DATA_PATH   <- "<path to comorbidity_diagnoses_only_pseudonym.parquet>"
-OUTPUT_DIR  <- "<directory for results>"
-SAMPLE_SIZE <- NULL      # set 5000L for a smoke test
+library(miCCI)
+
+# 1) Charlson mapping (Quan et al. 2005, enhanced ICD-10).
+quan_map <- load_quan_map()
+
+# 2) Population frequencies. Defaults to Destatis 23131-01.
+freq <- load_destatis()
+
+# 3) Precompute per-prefix lookups (one-time, ~30s).
+cache <- precompute_lookups(freq, quan_map)
+
+# 4) One encounter, all strategies.
+codes_anon <- c("E11", "N18", "I10")
+cci_interval(codes_anon, quan_map, cache)
+cci_probabilistic(codes_anon, quan_map, cache)
+cci_mi(codes_anon, quan_map, cache, m = 20L)
+cci_bayesian(codes_anon, quan_map, cache, n_draws = 25L, alpha_0 = 10)
 ```
 
-Then run:
+## Using your own population frequencies
 
-```bash
-Rscript scripts/01_run_compute.R
+Anywhere you would call `load_destatis()`, pass your own `data.table`
+with the same schema instead. Required columns:
+
+| Column        | Type      | Meaning |
+|---------------|-----------|---------|
+| `code`        | character | Dotted four-character ICD-10-GM code (e.g. `"E11.4"`). |
+| `code_nodot`  | character | The same code without the dot (e.g. `"E114"`). |
+| `code3`       | character | The three-character prefix (e.g. `"E11"`). |
+| `freq_total`  | numeric   | Encounter count for that code in your reference population. |
+| *age bands*   | numeric   | Optional. One column per Destatis age bin (`"unter 1"`, `"1 - 5"`, …, `"95 u. älter"`). If supplied, miCCI can produce age-stratified subcode probabilities. |
+
+Then:
+
+```r
+# 'my_freq' is a data.table with the schema above.
+cache  <- precompute_lookups(my_freq, quan_map)
+
+# Pipeline run with your own reference instead of Destatis:
+compute_predictions(
+  data_path  = "path/to/cohort.parquet",
+  output_dir = "out/",
+  freq_table = my_freq,                 # <-- your reference goes here
+  mi_m        = 20L,
+  bayes_draws = 25L,
+  alpha_0     = 10,
+  sl_cv_folds = 10L,
+  seed        = 42L
+)
 ```
 
-Output of this stage:
+If `freq_table` is `NULL`, miCCI falls back to `load_destatis()`.
 
-```
-<OUTPUT_DIR>/predictions.parquet
-<OUTPUT_DIR>/run_manifest.json
-```
+### Minimal example: building `freq_table` from scratch
 
-After it has finished, **never run it again unless the cohort changes**.
-
-### 3. Stage 2 — build the report (~minutes)
-
-Edit `scripts/02_run_report.R` if you want a different `INPUT_DIR`,
-bootstrap budget or pattern count, then:
-
-```bash
-Rscript scripts/02_run_report.R
+```r
+library(data.table)
+my_freq <- data.table(
+  code        = c("E11.4", "N18.4", "I10.0"),
+  code_nodot  = c("E114",  "N184",  "I100"),
+  code3       = c("E11",   "N18",   "I10"),
+  freq_total  = c(123456,   45678,  789012)
+)
+cache <- precompute_lookups(my_freq, quan_map)
 ```
 
-Output of this stage in the same directory:
+Age-stratified columns are optional — if you do not have them, every age
+will fall back to the marginal distribution.
 
-```
-tab_01_strategy_metrics_ci.csv          Global per-strategy MAE/RMSE/R^2/Bias + 95% CI
-tab_02_descriptive_statistics.csv       Gold vs each strategy
-tab_03_qa_group_coverage.csv            Per Charlson group: gold-active rate + mass ratios
-tab_04_qa_score_frequency.csv           Frequency of CCI bins per source
-tab_05_qa_ks_distance.csv               KS distance of each strategy vs gold
-tab_06_qa_posterior_coverage.csv        % within +/-0.5 / 1 / 2 CCI points
-tab_07_stratified_chapter.csv           Per ICD chapter
-tab_08_stratified_charlson_group.csv    Per gold-active Charlson group
-tab_09_stratified_pattern.csv           Per multimorbid pattern (top 30)
-tab_10_winners_chapter.csv              Best strategy per chapter (with verdict)
-tab_11_winners_group.csv                Best strategy per Charlson group
-tab_12_winners_pattern.csv              Best strategy per pattern
+## Two-stage pipeline on a cohort
 
-fig_01_mae_with_ci.{pdf,png}            MAE comparison with bootstrap CIs
-fig_02_predicted_vs_gold.{pdf,png}      HIGH DPI, big fonts, per-facet captions
-fig_03_temporal_stability.{pdf,png}     MAE by year
-fig_04_density_overlay.{pdf,png}        Distributional fidelity
-fig_05_bland_altman.{pdf,png}           Per-strategy agreement
-fig_06_qa_mass_conservation.{pdf,png}   QA: per-group mass ratios
-fig_07_stratified_chapter.{pdf,png}     Stratified MAE by chapter
-fig_08_stratified_charlson_group.{pdf,png}  Stratified MAE by Charlson group
-fig_09_stratified_pattern.{pdf,png}     Stratified MAE by multimorbid pattern
+```r
+# Stage 1: heavy compute (S1..S4 + Meta on the full cohort). Run once.
+compute_predictions(
+  data_path  = "cohort.parquet",
+  output_dir = "out/"
+)
+
+# Stage 2: tables + figures from the persisted artefact. Run as often
+# as you like for cosmetic / reviewer-driven tweaks.
+build_report(input_dir = "out/")
 ```
 
-### 4. Reviewer-driven cosmetic edits
+## Reproducibility
 
-If a reviewer asks for a different colour, size, font or label on any plot,
-edit the corresponding block in `R/95_report.R` and **only re-run Stage 2**:
+* Every internal RNG call is wrapped so the user's `.Random.seed` is
+  restored after the call. Running miCCI inside a larger simulation
+  never silently resets your RNG stream.
+* `seed` is a parameter on every public function that uses randomness.
 
-```bash
-Rscript scripts/02_run_report.R
+## Citation
+
+```r
+citation("miCCI")
 ```
 
-The 16-hour compute stage stays cached in `predictions.parquet`.
+## License
 
-## S6 deterministic meta-estimator
-
-```
-m_dist  = mean(s2_ecci, s3_mi, s4_bayes)
-w       = s1_width / (s1_width + kappa)        with kappa = 2
-raw     = (1 - w) * s1_mid + w * m_dist
-s6_meta = clamp(raw, s1_min, s1_max)
-```
-
-* No training, no calibration, no learned parameters.
-* Bounded by S1's certainty interval -> inherits S1's coverage.
-* Reduces to `s1_mid` when the interval collapses.
-* Reduces to the consensus of (S2, S3, S4) when the interval is wide.
-* `kappa = 2` is paper-stated as "twice the smallest non-trivial Charlson
-  weight" and exposed as `MICCI_META_KAPPA`.
-
-## Output dtypes
-
-| Column     | Type  |
-|------------|-------|
-| `cci_gold` | int   |
-| `s1_min`   | float |
-| `s1_max`   | float |
-| `s1_mid`   | float |
-| `s1_width` | float |
-| `s2_ecci`  | float |
-| `s3_mi`    | float |
-| `s4_bayes` | float |
-| `s6_meta`  | float |
-
-Users can apply `as.integer(round(.))` downstream if they need integer scores.
+MIT.

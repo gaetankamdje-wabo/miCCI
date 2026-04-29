@@ -1,23 +1,56 @@
+# Strategies (single-encounter)
+export(cci_gold)
 export(cci_interval)
 export(cci_probabilistic)
 export(cci_mi)
 export(cci_bayesian)
-export(cci_meta)
-export(cci_meta_dt)
-export(cci_gold)
+
+# Strategies (vectorised batch)
+export(cci_gold_batch)
+export(cci_interval_batch)
+export(cci_probabilistic_batch)
+export(cci_mi_batch)
+export(cci_bayesian_batch)
+
+# Meta learner
+export(cci_meta_fit)
+S3method(predict, SL_passthrough)
+
+# Reference data + lookup engine
 export(load_quan_map)
 export(load_destatis)
 export(precompute_lookups)
+
+# Cohort + pipeline
 export(load_cohort)
 export(compute_predictions)
 export(load_predictions)
-export(MICCI_META_KAPPA)
 
+# QA
+export(qa_group_coverage)
+export(qa_score_distribution)
+export(qa_posterior_coverage)
+export(gold_active_long)
+
+# Stratified evaluation
+export(stratified_evaluation)
+export(stratum_winners)
+
+# Bootstrap
+export(bootstrap_metrics)
+export(bootstrap_strategies)
+
+# Stage-2 report
+export(build_report)
+
+# Imports
 importFrom(data.table, data.table, fread, fwrite, as.data.table, setDT,
-           setkey, setnames, setorder, setorderv, rbindlist, dcast, melt, copy,
-           fifelse, fcase, uniqueN, frank, fsetdiff, .N, .SD)
+           setkey, setnames, setorder, setorderv, setattr, setcolorder,
+           rbindlist, dcast, melt, copy, fifelse, fcase, uniqueN, frank,
+           CJ, .N, .SD, set, is.data.table)
 importFrom(jsonlite, fromJSON, toJSON)
-importFrom(readxl, read_excel)
 importFrom(stats, predict, setNames, var, median, quantile, sd,
-           rgamma, ks.test, density)
-importFrom(utils, download.file, capture.output, sessionInfo)
+           rgamma, ks.test, density, gaussian, reorder)
+importFrom(grDevices, cairo_pdf)
+importFrom(utils, download.file, capture.output, sessionInfo,
+           packageVersion, head)

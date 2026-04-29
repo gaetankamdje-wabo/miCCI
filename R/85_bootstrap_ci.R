@@ -1,14 +1,9 @@
 # =============================================================================
-# miCCI v0.5.0 — 85_bootstrap_ci.R
+# miCCI / 85_bootstrap_ci.R
 # Non-parametric encounter-level bootstrap for MAE / RMSE / R^2 / Bias.
-#
-# Used both for the global per-strategy table and inside the stratified
-# evaluation. Sequential by default; if the optional package future.apply
-# is available the resampling loop runs in parallel.
 # =============================================================================
 
-#' Compute MAE / RMSE / R^2 / Bias on a single (predicted, gold) pair.
-#' Returns numeric vector of length 4.
+#' Compute MAE / RMSE / R^2 / Bias for one (predicted, gold) pair.
 #' @keywords internal
 .metrics4 <- function(pred, gold) {
   res <- pred - gold
@@ -21,20 +16,7 @@
   )
 }
 
-#' Bootstrap 95% percentile CIs for MAE / RMSE / R^2 / Bias.
-#'
-#' @param pred numeric vector of predictions
-#' @param gold numeric vector of gold values (same length)
-#' @param B    number of bootstrap resamples (default 1000)
-#' @param seed RNG seed
-#' @param parallel If TRUE and future.apply is installed, resamples are
-#'   parallelised across available cores.
-#'
-#' @return data.table with one row, columns:
-#'   n, mae, mae_lo, mae_hi,
-#'   rmse, rmse_lo, rmse_hi,
-#'   r2, r2_lo, r2_hi,
-#'   bias, bias_lo, bias_hi
+#' Bootstrap percentile CIs for MAE / RMSE / R^2 / Bias.
 #' @export
 bootstrap_metrics <- function(pred, gold, B = 1000L, seed = 42L,
                               parallel = FALSE) {
@@ -54,27 +36,27 @@ bootstrap_metrics <- function(pred, gold, B = 1000L, seed = 42L,
   }
 
   point <- .metrics4(pred, gold)
-
   one_replicate <- function(b) {
     idx <- sample.int(n, n, replace = TRUE)
     .metrics4(pred[idx], gold[idx])
   }
 
-  set.seed(seed)
-  if (parallel && requireNamespace("future.apply", quietly = TRUE)) {
-    seeds <- sample.int(.Machine$integer.max, B)
-    boot_mat <- future.apply::future_vapply(
-      seq_len(B),
-      function(b) { set.seed(seeds[b]); one_replicate(b) },
-      FUN.VALUE = numeric(4),
-      future.seed = TRUE
-    )
-  } else {
-    boot_mat <- vapply(seq_len(B), one_replicate, FUN.VALUE = numeric(4))
-  }
-  # boot_mat is 4 x B
-  q_lo <- apply(boot_mat, 1, function(x) quantile(x, 0.025, na.rm = TRUE))
-  q_hi <- apply(boot_mat, 1, function(x) quantile(x, 0.975, na.rm = TRUE))
+  boot_mat <- .with_local_seed(seed, {
+    if (parallel && requireNamespace("future.apply", quietly = TRUE)) {
+      seeds <- sample.int(.Machine$integer.max, B)
+      future.apply::future_vapply(
+        seq_len(B),
+        function(b) { set.seed(seeds[b]); one_replicate(b) },
+        FUN.VALUE = numeric(4L),
+        future.seed = TRUE
+      )
+    } else {
+      vapply(seq_len(B), one_replicate, FUN.VALUE = numeric(4L))
+    }
+  })
+
+  q_lo <- apply(boot_mat, 1L, function(x) stats::quantile(x, 0.025, na.rm = TRUE))
+  q_hi <- apply(boot_mat, 1L, function(x) stats::quantile(x, 0.975, na.rm = TRUE))
 
   data.table(
     n        = n,
@@ -89,11 +71,7 @@ bootstrap_metrics <- function(pred, gold, B = 1000L, seed = 42L,
   )
 }
 
-#' Apply bootstrap_metrics() to every strategy column of a predictions table.
-#'
-#' @param preds data.table with column cci_gold and the strategy columns
-#' @param strategies named character vector — names = column names in preds,
-#'                  values = pretty labels for the report
+#' Apply `bootstrap_metrics()` to every strategy column.
 #' @export
 bootstrap_strategies <- function(preds, strategies, B = 1000L, seed = 42L,
                                  parallel = FALSE) {
@@ -102,14 +80,11 @@ bootstrap_strategies <- function(preds, strategies, B = 1000L, seed = 42L,
     col <- names(strategies)[i]
     lab <- strategies[i]
     if (!col %in% names(preds)) next
-    cat(sprintf("    bootstrap %-12s (B=%d)... ", lab, B))
-    t0 <- proc.time()
     r <- bootstrap_metrics(preds[[col]], preds$cci_gold,
                            B = B, seed = seed, parallel = parallel)
     r[, strategy := col]
     r[, label    := lab]
     rows[[i]] <- r
-    cat(sprintf("%.1fs\n", (proc.time() - t0)[3]))
   }
   out <- rbindlist(rows, use.names = TRUE)
   setcolorder(out, c("strategy", "label", "n",

@@ -1,118 +1,109 @@
 # =============================================================================
-# miCCI v0.5.0 — 70_qa_distribution.R
-# Internal quality-assurance / plausibility analysis.
+# miCCI / 70_qa_distribution.R
+# Quality-assurance / distributional plausibility analysis.
 #
-# Compares the JSON Quan map, the gold-standard CCI, and the per-strategy
-# predictions on three axes:
-#
-#   (a) JSON coverage         — for every Charlson group in the JSON, how
-#                                often the cohort actually triggers it
-#                                (gold-active rate per group).
-#   (b) Mass conservation     — for every Charlson group, the mean
-#                                contribution to the gold CCI vs. the mean
-#                                contribution implied by S2 / S3 / S4.
-#                                Ratio ≈ 1.0 means the strategy reproduces
-#                                the per-group mass; > 1.1 or < 0.9 flags
-#                                a mapping or imputation problem.
-#   (c) Score distribution    — frequency of each CCI bin across
-#                                {gold, s2, s3, s4, s6_meta} + KS distance.
+# Three deliverables:
+#   (a) JSON coverage   - per Charlson group, the fraction of the cohort
+#                          for which the gold algorithm flags it active.
+#   (b) Mass conservation - per Charlson group, the mean expected
+#                          contribution to the CCI under each strategy
+#                          divided by the gold contribution. A faithful
+#                          strategy gives ratios near 1 across groups.
+#                          IMPORTANT: this requires per-(idx, gk)
+#                          probabilities for the strategy. We compute
+#                          them honestly here using the strategy's own
+#                          probabilistic structure - never by sharing a
+#                          single cohort-level mean across groups.
+#   (c) Score distribution - histogram across CCI bins, plus KS distance
+#                          vs. gold and posterior coverage tables.
 # =============================================================================
 
-#' Per-encounter active Charlson groups, computed from full ICD codes.
+#' Per-encounter active gold groups (after dependency suppression).
 #'
-#' Re-uses cci_gold_batch internals but returns the (idx, group) long table
-#' AFTER depends_on suppression — i.e. the groups that actually contribute
-#' to the gold score.
-#' @keywords internal
-.gold_active_long <- function(dt, quan_map) {
-  pl <- build_pattern_lookup(quan_map)
-  dl <- build_dep_lookup(quan_map)
-
-  dx_list <- strsplit(as.character(dt$diagnosen), "\\|+")
-  lens <- lengths(dx_list)
-  long <- data.table(
-    idx = rep(seq_len(nrow(dt)), lens),
-    code_raw = unlist(dx_list, use.names = FALSE)
-  )
-  long[, cn := toupper(gsub("[^A-Z0-9]", "", code_raw))]
-  long <- long[nchar(cn) >= 3]
-
-  unique_codes <- unique(long$cn)
-  pat_vec <- pl$pat
-  gk_vec  <- pl$gk
-  rows <- list()
-  for (uc in unique_codes) {
-    hits <- gk_vec[startsWith(uc, pat_vec) | startsWith(pat_vec, uc)]
-    if (length(hits) > 0) rows[[length(rows) + 1L]] <-
-        data.table(cn = uc, gk = unique(hits))
-  }
-  if (length(rows) == 0) {
-    return(data.table(idx = integer(0), gk = character(0)))
-  }
-  cgm <- rbindlist(rows); setkey(cgm, cn)
-  setkey(long, cn)
-  hits <- cgm[long, on = "cn", nomatch = NULL, allow.cartesian = TRUE]
-  triggered <- unique(hits[, .(idx, gk)])
-
-  if (nrow(dl) > 0 && nrow(triggered) > 0) {
-    suppress <- merge(triggered, dl, by.x = "gk", by.y = "child",
-                      allow.cartesian = TRUE)
-    suppress <- merge(suppress, triggered,
-                      by.x = c("idx", "parent"), by.y = c("idx", "gk"))
-    if (nrow(suppress) > 0) {
-      triggered <- fsetdiff(triggered, unique(suppress[, .(idx, gk)]))
-    }
-  }
-  triggered
+#' Wrapper around the internal helper so it has a stable export.
+#' @export
+gold_active_long <- function(dt, quan_map) {
+  .gold_active_long_internal(dt, quan_map)
 }
 
 #' Build the JSON-coverage / mass-conservation table.
 #'
-#' @param preds   data.table from compute_predictions (must contain
-#'                diagnosen, cci_gold, s2_ecci, s3_mi, s4_bayes, s6_meta)
-#' @param quan_map result of load_quan_map()
+#' Mass conservation is computed per Charlson group as
+#'    mean_idx [ contribution_strategy(idx, gk) ]
+#'  / mean_idx [ contribution_gold(idx, gk) ]
+#' where the per-encounter contribution is `P(group active) * weight`
+#' for the probabilistic strategies (S2 union, S3 imputation rate, S4
+#' Dirichlet rate) and `1 * weight` if the gold algorithm activates the
+#' group for that encounter.
 #'
-#' @return data.table with one row per Charlson group:
-#'   group, weight, n_patterns_in_json,
-#'   n_gold_active, pct_gold_active,
-#'   gold_mass, s2_mass, s3_mass, s4_mass,
-#'   ratio_s2, ratio_s3, ratio_s4
+#' @param preds     data.table with at least `diagnosen`, `cci_gold`. If
+#'   the optional per-group probabilities `s2_group_prob`, `s3_group_prob`,
+#'   `s4_group_prob` (each a per-(idx, gk) data.table with column `p`)
+#'   are stored as attributes of `preds`, they are used directly. Otherwise
+#'   the function falls back to recomputing them from `cache` if supplied.
+#' @param quan_map  output of `load_quan_map()`.
+#' @param cache     optional precomputed lookup environment. If `preds`
+#'   does not carry the strategy group_prob attributes and `cache` is NULL,
+#'   only the gold side of the mass-conservation table is filled in.
+#' @return data.table, one row per Charlson group, with columns:
+#'   group, weight, n_patterns_in_json, n_gold_active, pct_gold_active,
+#'   gold_mass, s2_mass, s3_mass, s4_mass, ratio_s2, ratio_s3, ratio_s4.
 #' @export
-qa_group_coverage <- function(preds, quan_map) {
+qa_group_coverage <- function(preds, quan_map, cache = NULL) {
   gn <- names(quan_map)
-  weights <- vapply(gn, function(g) quan_map[[g]]$weight, numeric(1))
-  n_pats  <- vapply(gn, function(g) length(.extract_patterns(quan_map[[g]])),
-                    integer(1))
+  weights <- vapply(gn, function(g) as.numeric(quan_map[[g]]$weight), numeric(1L))
+  n_pats  <- vapply(gn, function(g) length(.extract_patterns(quan_map[[g]])), integer(1L))
+  N <- nrow(preds)
 
-  # Per-encounter active gold groups
-  active <- .gold_active_long(preds, quan_map)
-  n_per_group <- active[, .(n_active = uniqueN(idx)), by = gk]
+  active_gold <- .gold_active_long_internal(preds, quan_map)
+  n_per_group <- active_gold[, .(n_active = uniqueN(idx)), by = gk]
   setnames(n_per_group, "gk", "group")
 
-  N <- nrow(preds)
   cov <- data.table(group = gn,
                     weight = weights,
                     n_patterns_in_json = n_pats)
   cov <- merge(cov, n_per_group, by = "group", all.x = TRUE)
   cov[is.na(n_active), n_active := 0L]
   cov[, pct_gold_active := round(100 * n_active / N, 3)]
-
-  # Gold mass per group = (n_active * weight) / N
   cov[, gold_mass := n_active * weight / N]
 
-  # Strategy mass per group is approximated at the cohort level by
-  # apportioning each strategy's TOTAL mass to groups in proportion to the
-  # gold per-group share. This is a sound mass-conservation check: if the
-  # strategy's overall mean equals the gold mean, the implied per-group
-  # contributions are proportional to the gold ones. Per-encounter
-  # group attribution requires re-running the strategy in long form,
-  # which is too expensive for the QA stage.
-  total_gold <- sum(cov$gold_mass)
-  share <- if (total_gold > 0) cov$gold_mass / total_gold else rep(0, nrow(cov))
+  # Strategy mass: needs per-(idx, gk) probabilities.
+  get_attr_dt <- function(attr_name) {
+    a <- attr(preds, attr_name, exact = TRUE)
+    if (is.null(a)) return(NULL)
+    if (!is.data.table(a)) a <- as.data.table(a)
+    a
+  }
+  s2_gp <- get_attr_dt("s2_group_prob")
+  s3_gp <- get_attr_dt("s3_group_prob")
+  s4_gp <- get_attr_dt("s4_group_prob")
 
-  cov[, s2_mass := share * mean(preds$s2_ecci, na.rm = TRUE)]
-  cov[, s3_mass := share * mean(preds$s3_mi,   na.rm = TRUE)]
-  cov[, s4_mass := share * mean(preds$s4_bayes, na.rm = TRUE)]
+  # Optional fallback: recompute S2 group probabilities if a cache is given.
+  if (is.null(s2_gp) && !is.null(cache)) {
+    res <- cci_probabilistic_batch(preds[, .(diagnosen)], quan_map, cache,
+                                   return_group_prob = TRUE)
+    s2_gp <- res$group_prob
+  }
+
+  per_group_mass <- function(gp_dt) {
+    if (is.null(gp_dt) || nrow(gp_dt) == 0L) {
+      return(setNames(rep(NA_real_, length(gn)), gn))
+    }
+    # mean over the cohort (treat missing (idx, gk) rows as p = 0)
+    sums <- gp_dt[, .(s = sum(p)), by = gk]
+    out <- setNames(rep(0, length(gn)), gn)
+    out[sums$gk] <- sums$s / N
+    # Multiply by weight to get mass.
+    out * weights[names(out)]
+  }
+
+  s2m <- per_group_mass(s2_gp)
+  s3m <- per_group_mass(s3_gp)
+  s4m <- per_group_mass(s4_gp)
+
+  cov[, s2_mass := s2m[group]]
+  cov[, s3_mass := s3m[group]]
+  cov[, s4_mass := s4m[group]]
 
   cov[, ratio_s2 := ifelse(gold_mass > 0, s2_mass / gold_mass, NA_real_)]
   cov[, ratio_s3 := ifelse(gold_mass > 0, s3_mass / gold_mass, NA_real_)]
@@ -122,18 +113,15 @@ qa_group_coverage <- function(preds, quan_map) {
   cov[]
 }
 
-#' Score-distribution comparison: bin counts + KS distance vs gold.
-#'
-#' Bins are clinically meaningful: 0, 1, 2, 3, 4-6, 7-10, 11+.
+#' Score-distribution comparison: bin counts plus KS distance vs gold.
 #' @export
 qa_score_distribution <- function(preds, strategies = c("s2_ecci", "s3_mi",
-                                                        "s4_bayes", "s6_meta")) {
+                                                        "s4_bayes", "meta")) {
   bin_fn <- function(x) {
     cut(round(x), breaks = c(-Inf, 0, 1, 2, 3, 6, 10, Inf),
         labels = c("0", "1", "2", "3", "4-6", "7-10", "11+"),
         right = TRUE)
   }
-
   rows <- list()
   for (col in c("cci_gold", strategies)) {
     if (!col %in% names(preds)) next
@@ -145,31 +133,30 @@ qa_score_distribution <- function(preds, strategies = c("s2_ecci", "s3_mi",
   }
   freq <- rbindlist(rows, use.names = TRUE)
 
-  # KS distances vs gold
   ks_rows <- list()
   for (col in strategies) {
     if (!col %in% names(preds)) next
     suppressWarnings({
-      ks <- ks.test(preds[[col]], preds$cci_gold)
+      ks <- stats::ks.test(preds[[col]], preds$cci_gold)
     })
     ks_rows[[length(ks_rows) + 1L]] <- data.table(
-      strategy = col,
-      ks_d = round(unname(ks$statistic), 4),
-      ks_p = signif(ks$p.value, 3),
+      strategy  = col,
+      ks_d      = round(unname(ks$statistic), 4),
+      ks_p      = signif(ks$p.value, 3),
       mean_pred = round(mean(preds[[col]], na.rm = TRUE), 4),
-      mean_gold = round(mean(preds$cci_gold,  na.rm = TRUE), 4),
+      mean_gold = round(mean(preds$cci_gold, na.rm = TRUE), 4),
       mean_diff = round(mean(preds[[col]] - preds$cci_gold, na.rm = TRUE), 4)
     )
   }
   list(frequency = freq, ks = rbindlist(ks_rows))
 }
 
-#' Posterior-coverage check (S3 & S4 specifically): share of encounters whose
-#' prediction equals gold within +/- 0, 1, 2 CCI points.
+#' Posterior-coverage check: share of encounters whose prediction is
+#' within 0.5, 1, 2 CCI points of gold.
 #' @export
 qa_posterior_coverage <- function(preds,
                                   strategies = c("s2_ecci", "s3_mi",
-                                                 "s4_bayes", "s6_meta")) {
+                                                 "s4_bayes", "meta")) {
   rows <- list()
   for (col in strategies) {
     if (!col %in% names(preds)) next
