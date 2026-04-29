@@ -29,11 +29,6 @@ five base strategies work without it. Install on demand:
 install.packages("SuperLearner")
 ```
 
-## Test
-```r
-testthat::test_dir("tests/testthat")
-```
-
 ## Quick start
 
 ```r
