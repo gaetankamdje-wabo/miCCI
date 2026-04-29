@@ -1,4 +1,4 @@
-# miCCI — Charlson Comorbidity Index from Anonymised ICD-10 Codes
+# miCCI - Charlson Comorbidity Index from Anonymised ICD-10 Codes
 
 `miCCI` reconstructs the Charlson Comorbidity Index (CCI) from truncated
 (anonymised) three-character ICD-10 codes using five complementary
