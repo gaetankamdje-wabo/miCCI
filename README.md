@@ -1,8 +1,8 @@
-# miCCI — Charlson Comorbidity Index from Anonymised ICD-10-GM Codes
+# miCCI - Charlson Comorbidity Index from Anonymised ICD-10 Codes
 
 `miCCI` reconstructs the Charlson Comorbidity Index (CCI) from truncated
-(anonymised) three-character ICD-10-GM codes using five complementary
-strategies plus a cross-validated meta learner.
+(anonymised) three-character ICD-10 codes using five complementary
+strategies in addition to a cross-validated meta learner.
 
 | Strategy | Idea | Key parameters |
 |---|---|---|
@@ -12,20 +12,14 @@ strategies plus a cross-validated meta learner.
 | **S4** Bayesian | Dirichlet posterior over subcode probabilities; posterior median across `n_draws` | `n_draws`, `alpha_0`, `seed` |
 | **Meta** | Cross-validated NNLS Super Learner over S1..S4 | `V` (folds), `seed` |
 
-This package provides the **estimators only**. Bootstrap, stratified
-evaluation, plotting, and any pipeline orchestration are deliberately
-left to the user — `miCCI` produces the per-encounter predictions; how
-you analyse them is up to you.
+
 
 ## Installation
 
 ```r
 # install.packages("remotes")
-<<<<<<< HEAD
 remotes::install_github("gaetankamdje-wabo/miCCI")
-=======
-remotes::install_github("gaetankamdje-wabo/miCCI", upgrade = "never", force = TRUE)
->>>>>>> adf22816b010316e769386f5211c7c5ae8866b15
+
 ```
 
 `SuperLearner` is needed only for the meta learner (`cci_meta_fit`); the
@@ -33,6 +27,11 @@ five base strategies work without it. Install on demand:
 
 ```r
 install.packages("SuperLearner")
+```
+
+## Test
+```r
+testthat::test_dir("tests/testthat")
 ```
 
 ## Quick start
