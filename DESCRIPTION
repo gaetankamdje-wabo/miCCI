@@ -1,20 +1,22 @@
 Package: miCCI
 Title: Quality-Preserving Charlson Comorbidity Index Estimation Under Diagnosis Anonymisation
-Version: 1.0.0
+Version: 0.5.0
 Authors@R: c(
     person("Gaetan", "Kamdje Wabo", email = "gaetan.kamdjewabo@medma.uni-heidelberg.de",
            role = c("aut", "cre")),
     person("Piotr", "Sokolowski", role = "aut"),
     person("Fabian", "Siegel", role = "aut"))
-Description: Five computational strategies for reconstructing the
-    Charlson Comorbidity Index (CCI) from truncated (anonymised)
-    ICD-10-GM codes. S1 deterministic interval, S2 single-pass
-    probabilistic heuristic, S3 multiple imputation, S4 Bayesian
-    Dirichlet prior median, and S5 (Meta Learner) a cross-validated
-    Super Learner combining S1 to S4 via non-negative least squares
-    (van der Laan, Polley & Hubbard 2007). Reference population
-    frequencies from the German Federal Statistical Office
-    (Destatis 23131-01). CCI mapping based on Quan et al. (2005).
+Description: Five training-free computational strategies for reconstructing
+    the Charlson Comorbidity Index (CCI) from truncated (anonymised)
+    ICD-10-GM codes: S1 deterministic interval, S2 expected value,
+    S3 multiple imputation, S4 Bayesian posterior median, and S6 a
+    deterministic meta-estimator that combines S1-S4 without any
+    learned parameters. Reference population frequencies are taken
+    from the German Federal Statistical Office (Destatis 23131-01).
+    CCI mapping based on Quan et al. (2005). The pipeline is split
+    into a heavy compute stage and a fast reporting stage so that
+    plots and tables can be regenerated without recomputing the
+    estimates.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
@@ -24,8 +26,7 @@ Imports:
     jsonlite,
     readxl,
     arrow,
-    ggplot2,
-    SuperLearner
+    ggplot2
 Suggests:
     testthat (>= 3.0.0),
     devtools,

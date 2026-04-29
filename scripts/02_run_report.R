@@ -1,5 +1,5 @@
 # =============================================================================
-# miCCI v1.0.0 — Stage 2 runner: BUILD REPORT (fast, ~minutes)
+# miCCI v0.5.0 — Stage 2 runner: BUILD REPORT (fast, ~minutes)
 # -----------------------------------------------------------------------------
 # Reads <INPUT_DIR>/predictions.parquet (written by 01_run_compute.R) and
 # regenerates ALL tables and figures. Run as often as needed for cosmetic
@@ -27,7 +27,7 @@ if (requireNamespace("miCCI", quietly = TRUE)) {
 library(data.table)
 
 cat(strrep("=", 64), "\n")
-cat("miCCI v1.0.0 — Stage 2: build_report\n")
+cat("miCCI v0.5.0 — Stage 2: build_report\n")
 cat("Input:  ", INPUT_DIR, "\n")
 cat("Output: ", OUTPUT_DIR, "\n")
 cat("Bootstrap: global=", B_GLOBAL, "  strata=", B_STRATA,

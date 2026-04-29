@@ -1,260 +1,165 @@
-# miCCI
+# miCCI v0.5.0
 
-**Estimate the Charlson Comorbidity Index from anonymized ICD-10-GM codes.**
+Quality-preserving Charlson Comorbidity Index (CCI) estimation under
+ICD-code anonymisation.
 
-When hospital data integration centers truncate ICD-10-GM codes to three characters for privacy, standard CCI algorithms break. miCCI reconstructs the CCI by using national subcode frequencies from the German Federal Statistical Office (Destatis) as a population prior.
+## What is new in v0.5.0
 
-Five strategies, one package. From a fast deterministic bound to a full Bayesian model.
+* **Single consistent cohort 2010-2024.** No train / calibrate / validate
+  split. All strategies are training-free and can be applied to the entire
+  cohort directly.
+* **S5 (XGBoost ML) removed.** Conceptually outside the paper.
+* **S6 reworked into a deterministic meta-estimator** that combines S1-S4
+  on every encounter without any learned parameters
+  (`R/60_cci_meta.R`, formula in the manuscript).
+* **All probabilistic outputs are floats.** Rounding is left to the user.
+* **Two-stage pipeline.** A long compute stage that produces a self-
+  contained predictions artefact, and a fast reporting stage that
+  regenerates every table and plot from that artefact in minutes.
+* **Bootstrap 95% confidence intervals** for MAE / RMSE / R^2 / Bias on
+  every strategy and on every stratum.
+* **Quality-assurance module** comparing the JSON Quan map, the gold
+  standard, and the predictions on coverage / mass conservation /
+  distributional fidelity (Plot 6, Tables 3-6).
+* **Stratified diagnostic-cluster benchmark** identifying the best
+  strategy per ICD chapter, per Charlson group and per multimorbid
+  pattern, with a categorical recommendation per stratum.
+* **Plot 02 (Predicted vs Gold) rewritten** at base font 16, axis text 14,
+  bold facet labels, axes 0-20, per-facet MAE+CI annotation, both PDF
+  (cairo vector) and PNG (300 dpi).
 
-| Strategy | What it does | Speed |
-|----------|-------------|-------|
-| **S1** Interval | Reports the [min, max] range; point estimate = midpoint | instant |
-| **S2** Probabilistic | Weights each Charlson group by its Destatis probability | instant |
-| **S3** MI-CCI | Draws subcodes 20x from Destatis, averages the CCI | seconds |
-| **S4** Bayesian | Draws subcodes 25x from a Dirichlet prior, takes the median | seconds |
-| **S5** Meta Learner | Combines S1 to S4 via cross-validated Super Learner (NNLS) | minutes |
+## Two-stage workflow
 
----
+```
++----------------------+         +------------------------+
+| 01_run_compute.R     |  -->    | predictions.parquet    |
+| (S1-S4 + S6, ~16h)   |         | run_manifest.json      |
++----------------------+         +------------------------+
+                                              |
+                                              v
+                                 +------------------------+
+                                 | 02_run_report.R        |
+                                 | (CIs, QA, plots, ~min) |
+                                 +------------------------+
+                                              |
+                                              v
+                                 tab_*.csv  +  fig_*.{pdf,png}
+```
 
-## Install
+## Run instructions
+
+### 1. Install (one time)
 
 ```r
-# Option 1: from GitHub
-devtools::install_github("gaetankamdje-wabo/miCCI")
-
-# Option 2: from a local clone
-git clone https://github.com/gaetankamdje-wabo/miCCI.git
-devtools::install("miCCI")
+# from the unpacked miCCI/ directory
+devtools::install(".")
+# or, without installing:
+# devtools::load_all(".")
 ```
 
-### Required R packages (installed automatically)
+Required packages: `data.table`, `jsonlite`, `readxl`, `arrow`, `ggplot2`.
+Optional: `future.apply` (parallel bootstrap), `scales`.
 
-```
-data.table, jsonlite, readxl, arrow, ggplot2, SuperLearner
-```
+### 2. Stage 1 — compute predictions (~16 h on the full Mannheim cohort)
 
-### Optional
-
-```
-future.apply   (parallel bootstrap)
-scales         (plot label formatting)
-testthat       (unit tests)
-```
-
----
-
-## Your data must look like this
-
-One row per encounter. One column `diagnosen` with ICD-10-GM codes separated by `|`.
-
-```
-falnr   | age | diagnosen
---------|-----|------------------------------
-P00001  | 72  | I25.1|E11.9|N18.3|J44.1
-P00002  | 45  | K80.1|K85.9
-P00003  | 68  | C34.1|C78.0|E11.4|I10.0
-```
-
-Codes can be full length (`E11.9`) or already truncated to three characters (`E11`). miCCI handles both.
-
----
-
-## Quick start: simulate and run
-
-This self-contained example generates synthetic encounters and runs all five strategies. Copy-paste it into R.
+Edit `scripts/01_run_compute.R`:
 
 ```r
-library(miCCI)
-library(data.table)
-
-# ── 1. Create toy encounters ──────────────────────────────────────────
-toy <- data.table(
-  falnr    = paste0("P", 1:6),
-  age      = c(72, 45, 68, 55, 80, 33),
-  diagnosen = c(
-    "I25.1|E11.9|N18.3|J44.1",
-    "K80.1|K85.9",
-    "C34.1|C78.0|E11.4|I10.0",
-    "E11.9|I10.0",
-    "C61|C78.5|G30.1|F00.1",
-    "S72.0|M80.0"
-  )
-)
-
-# ── 2. Load the Quan mapping and Destatis frequencies ─────────────────
-quan_map <- load_quan_map()
-dt_dest  <- load_destatis()
-
-# ── 3. Build the lookup cache (run ONCE, reuse for all strategies) ────
-cache <- precompute_lookups(dt_dest, quan_map)
-
-# ── 4. Gold standard (requires full-length codes) ────────────────────
-gold <- cci_gold(c("I25.1", "E11.9", "N18.3", "J44.1"), quan_map)
-gold$cci      # 4
-gold$active   # shows which Charlson groups fired
+DATA_PATH   <- "<path to comorbidity_diagnoses_only_pseudonym.parquet>"
+OUTPUT_DIR  <- "<directory for results>"
+SAMPLE_SIZE <- NULL      # set 5000L for a smoke test
 ```
 
-### Run each strategy on a single encounter
+Then run:
 
-```r
-codes <- c("I25.1", "E11.9", "N18.3", "J44.1")
-
-# S1: Deterministic interval
-cci_interval(codes, quan_map, cache)
-# => list(cci_min, cci_max, cci_mid, interval_width)
-
-# S2: Probabilistic heuristic
-cci_probabilistic(codes, quan_map, cache)
-# => list(e_cci)
-
-# S3: Multiple imputation (20 draws, mean)
-cci_mi(codes, quan_map, cache, m = 20L, seed = 42L)
-# => list(mi_cci)
-
-# S4: Bayesian Dirichlet prior (25 draws, median)
-cci_bayesian(codes, quan_map, cache, n_draws = 25L, seed = 42L)
-# => list(posterior_median)
+```bash
+Rscript scripts/01_run_compute.R
 ```
 
-### Run all strategies at once on a full cohort
-
-```r
-# compute_predictions() runs S1 to S5 in sequence and writes
-# a self-contained artefact to disk.
-#
-# This is designed for the real Mannheim cohort (~16h on 500k encounters).
-# For the toy example:
-
-result <- compute_predictions(
-  data_path   = "path/to/your/data.parquet",
-  output_dir  = "results/",
-  sample_size = NULL,     # set 5000L for a smoke test
-  mi_m        = 20L,      # S3: imputation rounds
-  bayes_draws = 25L,      # S4: Dirichlet draws
-  sl_cv_folds = 10L,      # S5: Super Learner CV folds
-  seed        = 42L
-)
-
-# Output: results/predictions.parquet + results/run_manifest.json
-```
-
-### Generate all tables and figures from a completed run
-
-```r
-build_report(
-  input_dir  = "results/",
-  output_dir = "results/",
-  B          = 1000L,     # bootstrap resamples (global)
-  B_strata   = 500L       # bootstrap resamples (per stratum)
-)
-
-# Output: tab_01..tab_12 CSV files + fig_01..fig_09 PDF/PNG
-```
-
----
-
-## Function reference
-
-### Data loading
-
-| Function | Purpose |
-|----------|---------|
-| `load_quan_map()` | Load the Quan et al. ICD-10 to Charlson group mapping (bundled JSON) |
-| `load_destatis()` | Download and parse Destatis 23131-01 subcode frequencies |
-| `precompute_lookups(dt_destatis, quan_map)` | Build the internal cache. Run once, pass to all strategies |
-| `load_cohort(path)` | Load a parquet file in the expected schema (falnr, age, diagnosen, ...) |
-
-### Gold standard
-
-| Function | Purpose |
-|----------|---------|
-| `cci_gold(icd_codes, quan_map)` | CCI from full-length codes (single encounter) |
-
-### Strategy functions (single encounter)
-
-| Function | Strategy | Returns |
-|----------|----------|---------|
-| `cci_interval(codes, quan_map, cache)` | S1 | `list(cci_min, cci_max, cci_mid, interval_width)` |
-| `cci_probabilistic(codes, quan_map, cache)` | S2 | `list(e_cci)` |
-| `cci_mi(codes, quan_map, cache, m, seed)` | S3 | `list(mi_cci)` |
-| `cci_bayesian(codes, quan_map, cache, n_draws, seed)` | S4 | `list(posterior_median)` |
-
-### Pipeline functions (full cohort)
-
-| Function | Purpose |
-|----------|---------|
-| `compute_predictions(data_path, output_dir, ...)` | Stage 1: run S1 to S5 on every encounter, write predictions.parquet |
-| `load_predictions(output_dir)` | Read a previously computed predictions artefact |
-| `build_report(input_dir, output_dir, ...)` | Stage 2: generate all tables and figures from predictions.parquet |
-| `cci_meta_fit(dt, V, seed)` | Fit the S5 Super Learner (called internally by compute_predictions) |
-
-### Evaluation and QA
-
-| Function | Purpose |
-|----------|---------|
-| `bootstrap_metrics(gold, predicted, B)` | MAE, RMSE, R², Bias with bootstrap 95% CI |
-| `bootstrap_strategies(preds, strategies, B)` | Run bootstrap_metrics for all strategies at once |
-| `qa_group_coverage(preds, quan_map)` | Per-Charlson-group mass conservation check |
-| `qa_score_distribution(preds, strategy_cols)` | CCI bin frequencies + KS distance vs gold |
-| `qa_posterior_coverage(preds, strategy_cols)` | % of encounters within ±0.5 / ±1.0 / ±2.0 of gold |
-| `stratified_evaluation(preds, strategies, ...)` | MAE by ICD chapter, Charlson group, multimorbid pattern |
-| `stratum_winners(strat_dt)` | Pick the best strategy per stratum with decisive/tied verdict |
-
----
-
-## Two-stage pipeline
+Output of this stage:
 
 ```
-Stage 1: compute_predictions()          Stage 2: build_report()
-(S1 to S5, ~16h on 500k encounters)    (tables + figures, ~minutes)
-
-   your_data.parquet                     predictions.parquet
-         |                                      |
-         v                                      v
-  predictions.parquet  ──────────────>   tab_01..12.csv
-  run_manifest.json                      fig_01..09.pdf/png
+<OUTPUT_DIR>/predictions.parquet
+<OUTPUT_DIR>/run_manifest.json
 ```
 
-**Stage 1 runs once.** Stage 2 runs as often as needed for cosmetic edits.
+After it has finished, **never run it again unless the cohort changes**.
 
----
+### 3. Stage 2 — build the report (~minutes)
 
-## Output columns (predictions.parquet)
+Edit `scripts/02_run_report.R` if you want a different `INPUT_DIR`,
+bootstrap budget or pattern count, then:
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `cci_gold` | int | Gold-standard CCI from full-length codes |
-| `s1_min` | int | S1 lower bound |
-| `s1_max` | int | S1 upper bound |
-| `s1_mid` | float | S1 midpoint estimate |
-| `s2_ecci` | float | S2 expected CCI |
-| `s3_mi` | float | S3 multiple imputation mean |
-| `s4_bayes` | float | S4 Bayesian prior median |
-| `s6_meta` | float | S5 Meta Learner (column name kept for backward compatibility) |
+```bash
+Rscript scripts/02_run_report.R
+```
 
-To convert any float to integer: `as.integer(round(x))`
+Output of this stage in the same directory:
 
----
+```
+tab_01_strategy_metrics_ci.csv          Global per-strategy MAE/RMSE/R^2/Bias + 95% CI
+tab_02_descriptive_statistics.csv       Gold vs each strategy
+tab_03_qa_group_coverage.csv            Per Charlson group: gold-active rate + mass ratios
+tab_04_qa_score_frequency.csv           Frequency of CCI bins per source
+tab_05_qa_ks_distance.csv               KS distance of each strategy vs gold
+tab_06_qa_posterior_coverage.csv        % within +/-0.5 / 1 / 2 CCI points
+tab_07_stratified_chapter.csv           Per ICD chapter
+tab_08_stratified_charlson_group.csv    Per gold-active Charlson group
+tab_09_stratified_pattern.csv           Per multimorbid pattern (top 30)
+tab_10_winners_chapter.csv              Best strategy per chapter (with verdict)
+tab_11_winners_group.csv                Best strategy per Charlson group
+tab_12_winners_pattern.csv              Best strategy per pattern
 
-## S5 Meta Learner
+fig_01_mae_with_ci.{pdf,png}            MAE comparison with bootstrap CIs
+fig_02_predicted_vs_gold.{pdf,png}      HIGH DPI, big fonts, per-facet captions
+fig_03_temporal_stability.{pdf,png}     MAE by year
+fig_04_density_overlay.{pdf,png}        Distributional fidelity
+fig_05_bland_altman.{pdf,png}           Per-strategy agreement
+fig_06_qa_mass_conservation.{pdf,png}   QA: per-group mass ratios
+fig_07_stratified_chapter.{pdf,png}     Stratified MAE by chapter
+fig_08_stratified_charlson_group.{pdf,png}  Stratified MAE by Charlson group
+fig_09_stratified_pattern.{pdf,png}     Stratified MAE by multimorbid pattern
+```
 
-The Meta Learner is a cross-validated Super Learner (van der Laan, Polley & Hubbard 2007). It takes the outputs of S1 to S4, learns non-negative weights via NNLS over 10-fold CV, and returns their convex combination. It does not look at ICD codes or Destatis frequencies.
+### 4. Reviewer-driven cosmetic edits
 
-The internal column is named `s6_meta` for backward compatibility with earlier development versions. All display labels and figures use "Meta".
+If a reviewer asks for a different colour, size, font or label on any plot,
+edit the corresponding block in `R/95_report.R` and **only re-run Stage 2**:
 
----
+```bash
+Rscript scripts/02_run_report.R
+```
 
-## Citation
+The 16-hour compute stage stays cached in `predictions.parquet`.
 
-If you use miCCI, please cite:
+## S6 deterministic meta-estimator
 
-> Kamdje Wabo G, Santhanam N, Jannesari Ladani M, Hagmann M, Sokolowski PP,
-> Ganslandt T, Siegel F. Estimating the Charlson Comorbidity Index From
-> Anonymized Diagnosis Codes While Preserving Data Quality: Methodological
-> Study Comparing Five Computational Strategies. *JMIR* (submitted).
+```
+m_dist  = mean(s2_ecci, s3_mi, s4_bayes)
+w       = s1_width / (s1_width + kappa)        with kappa = 2
+raw     = (1 - w) * s1_mid + w * m_dist
+s6_meta = clamp(raw, s1_min, s1_max)
+```
 
----
+* No training, no calibration, no learned parameters.
+* Bounded by S1's certainty interval -> inherits S1's coverage.
+* Reduces to `s1_mid` when the interval collapses.
+* Reduces to the consensus of (S2, S3, S4) when the interval is wide.
+* `kappa = 2` is paper-stated as "twice the smallest non-trivial Charlson
+  weight" and exposed as `MICCI_META_KAPPA`.
 
-## License
+## Output dtypes
 
-MIT. See [LICENSE](LICENSE).
+| Column     | Type  |
+|------------|-------|
+| `cci_gold` | int   |
+| `s1_min`   | float |
+| `s1_max`   | float |
+| `s1_mid`   | float |
+| `s1_width` | float |
+| `s2_ecci`  | float |
+| `s3_mi`    | float |
+| `s4_bayes` | float |
+| `s6_meta`  | float |
+
+Users can apply `as.integer(round(.))` downstream if they need integer scores.

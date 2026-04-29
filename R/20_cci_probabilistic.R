@@ -1,7 +1,7 @@
 # =============================================================================
-# miCCI v1.0.0 — 20_cci_probabilistic.R
+# miCCI v0.5.0 — 20_cci_probabilistic.R
 # S2: E-CCI — FULLY VECTORISED via data.table joins
-# v1.0 change: returns raw float (no round())
+# v0.5 change: returns raw float (no round())
 # =============================================================================
 
 #' @export

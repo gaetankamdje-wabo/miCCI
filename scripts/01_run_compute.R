@@ -1,5 +1,5 @@
 # =============================================================================
-# miCCI v1.0.0 — Stage 1 runner: COMPUTE PREDICTIONS  (long-running, ~16h)
+# miCCI v0.5.0 — Stage 1 runner: COMPUTE PREDICTIONS  (long-running, ~16h)
 # -----------------------------------------------------------------------------
 # Run this script ONCE on the full Mannheim cohort. It produces:
 #   <OUTPUT_DIR>/predictions.parquet   (one row per encounter, all strategies)
@@ -26,7 +26,7 @@ if (requireNamespace("miCCI", quietly = TRUE)) {
 library(data.table)
 
 cat(strrep("=", 64), "\n")
-cat("miCCI v1.0.0 — Stage 1: compute_predictions\n")
+cat("miCCI v0.5.0 — Stage 1: compute_predictions\n")
 cat("Data:   ", DATA_PATH, "\n")
 cat("Output: ", OUTPUT_DIR, "\n")
 cat("Sample: ", ifelse(is.null(SAMPLE_SIZE), "FULL", as.character(SAMPLE_SIZE)), "\n")
@@ -38,7 +38,7 @@ res <- compute_predictions(
   sample_size = SAMPLE_SIZE,
   mi_m        = 20L,
   bayes_draws = 25L,
-  sl_cv_folds = 10L,
+  kappa       = MICCI_META_KAPPA,
   seed        = 42L
 )
 

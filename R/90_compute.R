@@ -1,5 +1,5 @@
 # =============================================================================
-# miCCI v1.0.0 — 90_compute.R
+# miCCI v0.5.0 — 90_compute.R
 # Stage 1 of the two-stage pipeline.
 #
 # compute_predictions() runs the full long-running computation (S1-S4 + S6,
@@ -63,8 +63,8 @@ load_cohort <- function(path,
 #' @param sample_size   Optional integer; subsample for testing only (NULL=all)
 #' @param mi_m          Number of MI imputations (S3); default 20
 #' @param bayes_draws   Number of Bayesian Dirichlet draws (S4); default 25
-#' @param sl_cv_folds   Number of CV folds for the S6 Super Learner; default 10
-#' @param seed          RNG seed for S3/S4/S6 reproducibility; default 42
+#' @param kappa         S6 smoothing constant; default MICCI_META_KAPPA
+#' @param seed          RNG seed for S3/S4 reproducibility; default 42
 #'
 #' @return Invisibly: list(predictions = <data.table>, manifest = <list>).
 #'         Side effect: writes predictions.parquet (or .rds fallback) +
@@ -76,10 +76,10 @@ compute_predictions <- function(data_path,
                                 sample_size = NULL,
                                 mi_m        = 20L,
                                 bayes_draws = 25L,
-                                sl_cv_folds = 10L,
+                                kappa       = MICCI_META_KAPPA,
                                 seed        = 42L) {
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-  cat("=== miCCI v1.0.0 — Stage 1: compute_predictions ===\n\n")
+  cat("=== miCCI v0.5.0 — Stage 1: compute_predictions ===\n\n")
   t_global <- proc.time()
 
   # 1. Load
@@ -127,19 +127,10 @@ compute_predictions <- function(data_path,
                                              n_draws = bayes_draws,
                                              seed = seed))]
 
-  # 8. S6 — Cross-validated Super Learner meta-estimator
-  cat("[+]   S6 Super Learner meta-estimator (10-fold CV)\n")
-  sl_res <- .timed("S6",
-    cci_meta_fit(dt[, .(cci_gold, s1_min, s1_max, s1_mid,
-                        s2_ecci, s3_mi, s4_bayes)],
-                 V = sl_cv_folds, seed = seed, verbose = FALSE))
-  dt[, s6_meta := sl_res$predictions]
-  cat("  SL weights (NNLS, sum-to-1):\n")
-  for (nm in names(sl_res$weights))
-    cat(sprintf("    %-10s %.4f\n", nm, sl_res$weights[nm]))
-  cat("  SL CV risk per learner:\n")
-  for (nm in names(sl_res$cv_risk))
-    cat(sprintf("    %-10s %.4f\n", nm, sl_res$cv_risk[nm]))
+  # 8. S6 — Deterministic meta-estimator (cheap, runs in seconds)
+  cat("[+]   S6 Meta-estimator (deterministic)\n")
+  dt[, s6_meta := cci_meta(s1_min, s1_max, s1_mid,
+                           s2_ecci, s3_mi, s4_bayes, kappa = kappa)]
 
   # 9. Persist artefact
   cat("\n=== SAVING ARTEFACT ===\n")
@@ -179,7 +170,7 @@ compute_predictions <- function(data_path,
   # 10. Run manifest (machine + human readable)
   manifest <- list(
     package         = "miCCI",
-    version         = "1.0.0",
+    version         = "0.5.0",
     created_utc     = format(Sys.time(), tz = "UTC", usetz = TRUE),
     data_path       = normalizePath(data_path, mustWork = FALSE),
     output_dir      = normalizePath(output_dir, mustWork = FALSE),
@@ -189,18 +180,9 @@ compute_predictions <- function(data_path,
     parameters      = list(
       mi_m        = mi_m,
       bayes_draws = bayes_draws,
-      sl_cv_folds = sl_cv_folds,
-      sl_method   = "SuperLearner::method.NNLS",
+      kappa       = kappa,
       seed        = seed,
       sample_size = if (is.null(sample_size)) "FULL" else sample_size
-    ),
-    super_learner   = list(
-      method  = "SuperLearner (van der Laan, Polley, Hubbard 2007)",
-      library = c("SL.s1_mid", "SL.s2_ecci", "SL.s3_mi", "SL.s4_bayes"),
-      meta    = "method.NNLS",
-      V       = sl_cv_folds,
-      weights = as.list(sl_res$weights),
-      cv_risk = as.list(sl_res$cv_risk)
     ),
     runtime_seconds = round((proc.time() - t_global)[3], 1),
     columns         = out_cols,
@@ -211,15 +193,6 @@ compute_predictions <- function(data_path,
   writeLines(jsonlite::toJSON(manifest, pretty = TRUE, auto_unbox = TRUE),
              manifest_path)
   cat(sprintf("  manifest:    %s\n", manifest_path))
-
-  # Also drop a dedicated CSV with the SL weights — handy for the paper
-  sl_csv <- file.path(output_dir, "superlearner_weights.csv")
-  fwrite(data.table(
-    learner = names(sl_res$weights),
-    weight  = as.numeric(sl_res$weights),
-    cv_risk = as.numeric(sl_res$cv_risk)
-  ), sl_csv)
-  cat(sprintf("  sl weights:  %s\n", sl_csv))
 
   cat(sprintf("\nTotal stage-1 runtime: %.1f s (%.2f h)\n",
               manifest$runtime_seconds, manifest$runtime_seconds / 3600))

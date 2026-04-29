@@ -1,7 +1,7 @@
 # =============================================================================
-# miCCI v1.0.0 — 40_cci_bayesian.R
+# miCCI v0.5.0 — 40_cci_bayesian.R
 # S4: Bayesian CCI — Dirichlet draws, vectorised gold per draw, posterior median
-# v1.0 change: returns raw float vector (no round())
+# v0.5 change: returns raw float vector (no round())
 # =============================================================================
 
 #' @export

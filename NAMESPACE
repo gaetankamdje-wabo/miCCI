@@ -2,7 +2,8 @@ export(cci_interval)
 export(cci_probabilistic)
 export(cci_mi)
 export(cci_bayesian)
-export(cci_meta_fit)
+export(cci_meta)
+export(cci_meta_dt)
 export(cci_gold)
 export(load_quan_map)
 export(load_destatis)
@@ -10,32 +11,13 @@ export(precompute_lookups)
 export(load_cohort)
 export(compute_predictions)
 export(load_predictions)
-
-# S3 method for the pass-through learner (required by SuperLearner)
-S3method(predict, SL_passthrough)
-
-# Stage-2 report pipeline
-export(build_report)
-
-# Bootstrap CI helpers
-export(bootstrap_metrics)
-export(bootstrap_strategies)
-
-# QA / distributional plausibility
-export(qa_group_coverage)
-export(qa_score_distribution)
-export(qa_posterior_coverage)
-
-# Stratified evaluation
-export(stratified_evaluation)
-export(stratum_winners)
+export(MICCI_META_KAPPA)
 
 importFrom(data.table, data.table, fread, fwrite, as.data.table, setDT,
            setkey, setnames, setorder, setorderv, rbindlist, dcast, melt, copy,
            fifelse, fcase, uniqueN, frank, fsetdiff, .N, .SD)
 importFrom(jsonlite, fromJSON, toJSON)
 importFrom(readxl, read_excel)
-importFrom(SuperLearner, SuperLearner, All)
 importFrom(stats, predict, setNames, var, median, quantile, sd,
-           rgamma, ks.test, density, gaussian)
+           rgamma, ks.test, density)
 importFrom(utils, download.file, capture.output, sessionInfo)

@@ -1,5 +1,5 @@
 # =============================================================================
-# miCCI v1.0.0 — 70_qa_distribution.R
+# miCCI v0.5.0 — 70_qa_distribution.R
 # Internal quality-assurance / plausibility analysis.
 #
 # Compares the JSON Quan map, the gold-standard CCI, and the per-strategy

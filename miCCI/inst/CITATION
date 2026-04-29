@@ -1,0 +1,26 @@
+citHeader("To cite miCCI in publications, please use:")
+
+bibentry(
+  bibtype  = "Article",
+  title    = paste0("Estimating the Charlson Comorbidity Index from ",
+                    "Anonymized ICD-10-GM Diagnosis Codes: ",
+                    "A Multi-Strategy Imputation Framework"),
+  author   = c(person("Gaetan", "Kamdje Wabo"),
+               person("Piotr",  "Sokolowski"),
+               person("Mahboubeh", "Jannesari"),
+               person("Nandhini", "Santhanam"),
+               person("Michael", "Hagmann"),
+               person("Thomas", "Ganslandt"),
+               person("Fabian", "Siegel")),
+  journal  = "JMIR Medical Informatics",
+  year     = "2026",
+  note     = "Manuscript submitted",
+  textVersion = paste0(
+    "Kamdje Wabo G, Sokolowski P, Jannesari M, Santhanam N, ",
+    "Hagmann M, Ganslandt T, Siegel F. ",
+    "Estimating the Charlson Comorbidity Index from ",
+    "Anonymized ICD-10-GM Diagnosis Codes: ",
+    "A Multi-Strategy Imputation Framework. ",
+    "JMIR Medical Informatics. 2026 (manuscript submitted)."
+  )
+)

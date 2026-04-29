@@ -1,5 +1,5 @@
 # =============================================================================
-# miCCI v1.0.0 — 85_bootstrap_ci.R
+# miCCI v0.5.0 — 85_bootstrap_ci.R
 # Non-parametric encounter-level bootstrap for MAE / RMSE / R^2 / Bias.
 #
 # Used both for the global per-strategy table and inside the stratified

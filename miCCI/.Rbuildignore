@@ -1,0 +1,17 @@
+^\.Rproj\.user$
+^.*\.Rproj$
+^scripts$
+^analysis$
+^.*\.zip$
+^\.git$
+^\.github$
+^README\.Rmd$
+^doc$
+^Meta$
+^cran-comments\.md$
+^\.travis\.yml$
+^codecov\.yml$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
+^revdep$

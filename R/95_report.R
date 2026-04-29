@@ -1,5 +1,5 @@
 # =============================================================================
-# miCCI v1.0.0 — 95_report.R
+# miCCI v0.5.0 — 95_report.R
 # Stage 2 of the two-stage pipeline.
 #
 # build_report() reads ONLY the artefact written by compute_predictions()
@@ -22,7 +22,7 @@
 
 #' Strategy display: column name -> pretty label.
 #' @keywords internal
-.strategy_labels <- function() {
+.strategies_v05 <- function() {
   c(
     s1_mid   = "S1 Interval",
     s2_ecci  = "S2 Probabilistic",
@@ -74,7 +74,7 @@ build_report <- function(input_dir,
   requireNamespace("ggplot2", quietly = TRUE)
   gg <- asNamespace("ggplot2")
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-  cat("=== miCCI v1.0.0 — Stage 2: build_report ===\n\n")
+  cat("=== miCCI v0.5.0 — Stage 2: build_report ===\n\n")
 
   # ── 1. Load artefact ─────────────────────────────────────────────────────
   cat("[1/7] Loading predictions artefact\n")
@@ -82,13 +82,17 @@ build_report <- function(input_dir,
   cat(sprintf("  loaded %d encounters, %d columns\n",
               nrow(preds), ncol(preds)))
   quan_map <- load_quan_map()
-  strategies <- .strategy_labels()
+  strategies <- .strategies_v05()
+  # Harmonized palette used across EVERY plot in this report.
+  # S1 to S4 keep Okabe-Ito categorical colours for colour-blind safety.
+  # Meta is rendered in neutral dark grey to signal it is a derived ensemble,
+  # not a fifth independent strategy.
   pal <- c("Gold Standard"    = "#1B1B1B",
            "S1 Interval"      = "#E69F00",
            "S2 Probabilistic" = "#56B4E9",
            "S3 MI-CCI"        = "#009E73",
            "S4 Bayesian"      = "#CC79A7",
-           "Meta"             = "#D55E00")
+           "Meta"             = "#6E6E6E")
 
   written <- character(0)
   add <- function(p) { written <<- c(written, p); invisible(p) }
@@ -160,16 +164,20 @@ build_report <- function(input_dir,
   ## ── Plot 01: MAE comparison with CI error bars ────────────────────────
   d1 <- copy(global_ci)
   d1[, label := factor(label, levels = label[order(mae)])]
-  p1 <- gg$ggplot(d1, gg$aes(x = label, y = mae)) +
-    gg$geom_col(fill = "#2C3E50", width = 0.6, alpha = 0.9) +
+  p1 <- gg$ggplot(d1, gg$aes(x = label, y = mae, fill = label)) +
+    gg$geom_col(width = 0.6, alpha = 0.9) +
     gg$geom_errorbar(gg$aes(ymin = mae_lo, ymax = mae_hi),
                      width = 0.2, linewidth = 0.6, color = "#1B1B1B") +
-    gg$geom_text(gg$aes(label = sprintf("%.3f", mae)),
+    gg$geom_text(gg$aes(label = sprintf("%.4f", mae)),
                  vjust = -0.6, size = 5) +
+    gg$scale_fill_manual(values = pal[-1], guide = "none") +
     gg$labs(
       title    = "Mean Absolute Error by Strategy (Full Cohort 2010-2024)",
       subtitle = sprintf("Error bars: bootstrap 95%% CI (B=%d)", B),
-      caption  = "Lower is better. Strategies sorted by point MAE.",
+      caption  = paste0("Lower is better. Strategies sorted by point MAE. ",
+                        "Error bars are narrow at this cohort size (n=507,949); ",
+                        "numerical CIs are reported in tab_01_strategy_metrics_ci.csv. ",
+                        "Values shown with 4 decimals so that S3 and S4 are distinguishable."),
       x = NULL, y = "MAE"
     ) +
     .theme_micci(14) +
@@ -246,67 +254,94 @@ build_report <- function(input_dir,
     gg$geom_line(linewidth = 1) + gg$geom_point(size = 2.5) +
     gg$scale_color_manual(values = pal[-1]) +
     gg$scale_x_continuous(breaks = sort(unique(yl$year))) +
+    gg$scale_y_continuous(limits = c(0, NA), expand = gg$expansion(mult = c(0, 0.05))) +
     gg$labs(
       title    = "Temporal Stability: MAE by Calendar Year",
       subtitle = "Lower is better. Lines show per-year MAE for each strategy.",
-      caption  = "All strategies are training-free, so no out-of-distribution year exists.",
+      caption  = paste0("All strategies are training-free, so no out-of-distribution year exists. ",
+                        "Y-axis anchored at 0 to show absolute magnitude rather than visual gap."),
       x = "Calendar year", y = "MAE"
     ) +
     .theme_micci(14) +
     gg$theme(axis.text.x = gg$element_text(angle = 30, hjust = 1))
   save_fig(p3, "fig_03_temporal_stability", 12, 6.5)
 
-  ## ── Plot 04: Violin comparison — gold vs each strategy ───────────────
+  ## ── Plot 04: Bin histogram — gold vs each strategy on CCI 0 to 5 ─────
 
-  # Build one faceted panel per strategy. In each facet, show two violins
-  # side by side: "Gold Standard" and the strategy. This avoids the
-  # overplotting inherent in overlaid density curves.
-  violin_rows <- list()
+  # Violins are inappropriate for integer-valued CCI scores. A side-by-side
+  # bar histogram on the 0-to-5 range directly visualises the bin-level
+  # redistribution described in the Results text (CCI=1 under-representation,
+  # CCI=2 over-representation by the stochastic strategies).
+  bin_max <- 5L
+  hist_rows <- list()
   for (c in names(strategies)) {
     lbl <- strategies[c]
-    violin_rows[[length(violin_rows) + 1L]] <- data.table(
-      value  = preds$cci_gold,
-      Source = "Gold Standard",
-      panel  = lbl
-    )
-    violin_rows[[length(violin_rows) + 1L]] <- data.table(
-      value  = preds[[c]],
-      Source = lbl,
-      panel  = lbl
-    )
+
+    g <- preds$cci_gold
+    g_int <- pmin(pmax(as.integer(round(g)), 0L), bin_max)
+    g_tab <- data.table(cci_bin = g_int)[, .N, by = cci_bin]
+    g_tab[, pct := 100 * N / nrow(preds)]
+    g_tab[, Source := "Gold Standard"]
+    g_tab[, panel := lbl]
+
+    s <- preds[[c]]
+    s_int <- pmin(pmax(as.integer(round(s)), 0L), bin_max)
+    s_tab <- data.table(cci_bin = s_int)[, .N, by = cci_bin]
+    s_tab[, pct := 100 * N / nrow(preds)]
+    s_tab[, Source := lbl]
+    s_tab[, panel := lbl]
+
+    hist_rows[[length(hist_rows) + 1L]] <- g_tab
+    hist_rows[[length(hist_rows) + 1L]] <- s_tab
   }
-  violin_dt <- rbindlist(violin_rows)
-  violin_dt[, panel := factor(panel, levels = unname(strategies))]
+  hist_dt <- rbindlist(hist_rows, use.names = TRUE, fill = TRUE)
 
-  # Source ordering: Gold always first (left), strategy second (right)
-  violin_dt[, Source := factor(Source,
-    levels = c("Gold Standard", unname(strategies)))]
+  # Fill missing bins with zeros so every facet has the same x-axis range
+  all_bins <- CJ(cci_bin = 0:bin_max,
+                 Source  = unique(hist_dt$Source),
+                 panel   = unique(hist_dt$panel))
+  # Keep only the pairs that actually belong to each panel (Gold + its strategy)
+  all_bins <- all_bins[Source == "Gold Standard" | Source == panel]
+  hist_dt <- merge(all_bins, hist_dt,
+                   by = c("cci_bin", "Source", "panel"), all.x = TRUE)
+  hist_dt[is.na(pct), pct := 0]
+  hist_dt[is.na(N), N := 0L]
 
-  # Violin palette: gold + per-strategy colour
-  violin_pal <- c(pal["Gold Standard"], pal[unname(strategies)])
+  hist_dt[, panel  := factor(panel,  levels = unname(strategies))]
+  hist_dt[, Source := factor(Source, levels = c("Gold Standard", unname(strategies)))]
 
-  p4 <- gg$ggplot(violin_dt, gg$aes(x = Source, y = value, fill = Source)) +
-    gg$geom_violin(alpha = 0.55, color = NA, scale = "width",
-                   adjust = 1.5, trim = TRUE) +
-    gg$stat_summary(fun = median, geom = "crossbar",
-                    width = 0.35, linewidth = 0.5, color = "#1B1B1B") +
-    gg$facet_wrap(~ panel, ncol = 3, scales = "free_x") +
-    gg$scale_fill_manual(values = violin_pal, drop = FALSE) +
-    gg$scale_y_continuous(limits = c(-0.5, 18), breaks = seq(0, 18, 3)) +
-    gg$labs(
-      title    = "Distributional Fidelity: Gold vs. Strategies",
-      subtitle = "Violin comparison of CCI scores across the full 2010-2024 cohort",
-      caption  = paste0("Each panel pairs the gold-standard distribution (left) with one ",
-                        "strategy (right). Crossbar = median. A faithful strategy mirrors ",
-                        "the gold violin shape."),
-      x = NULL, y = "CCI score"
+  # Per-facet palette: gold stays black, strategy uses its harmonized colour
+  hist_pal <- c(pal["Gold Standard"], pal[unname(strategies)])
+
+  p4 <- gg$ggplot(hist_dt, gg$aes(x = cci_bin, y = pct, fill = Source)) +
+    gg$geom_col(position = gg$position_dodge(width = 0.75),
+                width = 0.7, alpha = 0.9) +
+    gg$geom_text(gg$aes(label = sprintf("%.1f", pct)),
+                 position = gg$position_dodge(width = 0.75),
+                 vjust = -0.3, size = 3) +
+    gg$facet_wrap(~ panel, ncol = 3) +
+    gg$scale_fill_manual(values = hist_pal, drop = FALSE) +
+    gg$scale_x_continuous(breaks = 0:bin_max) +
+    gg$scale_y_continuous(
+      limits = c(0, NA),
+      expand = gg$expansion(mult = c(0, 0.1)),
+      labels = function(x) paste0(x, "%")
     ) +
-    .theme_micci(14) +
+    gg$labs(
+      title    = "Distributional Fidelity: Gold vs. Strategies (CCI 0 to 5)",
+      subtitle = sprintf("Per-bin share of the cohort (n=%s). Scores above 5 are merged into bin 5 for this view.",
+                         format(nrow(preds), big.mark = ",")),
+      caption  = paste0("Each facet pairs the gold-standard bin frequency with one strategy. ",
+                        "A faithful strategy matches the height of the black bars. ",
+                        "The detailed breakdown including the upper tail is reported in tab_04_qa_score_frequency.csv."),
+      x = "CCI score", y = "Share of encounters"
+    ) +
+    .theme_micci(13) +
     gg$theme(
-      axis.text.x  = gg$element_text(angle = 25, hjust = 1, size = 11),
-      legend.position = "none"
+      legend.position = "bottom",
+      panel.spacing   = grid::unit(1.2, "lines")
     )
-  save_fig(p4, "fig_04_violin_comparison", 14, 8)
+  save_fig(p4, "fig_04_bin_histogram", 16, 9)
 
   ## ── Plot 05: Bland-Altman per strategy ───────────────────────────────
   ba_rows <- list()
@@ -351,15 +386,17 @@ build_report <- function(input_dir,
   qa_long[, ratio_type := factor(ratio_type,
             levels = c("ratio_s2", "ratio_s3", "ratio_s4"),
             labels = c("S2 / Gold", "S3 / Gold", "S4 / Gold"))]
+  # Harmonized per-strategy colours (subset of pal for S2 to S4)
+  qa_pal <- c("S2 / Gold" = unname(pal["S2 Probabilistic"]),
+              "S3 / Gold" = unname(pal["S3 MI-CCI"]),
+              "S4 / Gold" = unname(pal["S4 Bayesian"]))
   p6 <- gg$ggplot(qa_long, gg$aes(x = reorder(group, pct_gold_active),
                                   y = ratio, fill = ratio_type)) +
     gg$geom_col(position = gg$position_dodge(width = 0.75),
                 width = 0.7, alpha = 0.9) +
     gg$geom_hline(yintercept = 1, linetype = "dashed",
                   color = "#1B1B1B", linewidth = 0.6) +
-    gg$scale_fill_manual(values = c("S2 / Gold" = "#56B4E9",
-                                    "S3 / Gold" = "#009E73",
-                                    "S4 / Gold" = "#CC79A7")) +
+    gg$scale_fill_manual(values = qa_pal) +
     gg$coord_flip() +
     gg$labs(
       title    = "Quality Assurance: Per-Group Mass Conservation",

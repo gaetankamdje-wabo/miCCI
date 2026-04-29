@@ -1,5 +1,5 @@
 # =============================================================================
-# miCCI v1.0.0 — 80_stratified_eval.R
+# miCCI v0.5.0 — 80_stratified_eval.R
 # Per-stratum benchmark: which strategy wins where?
 #
 # Three stratifications are produced:

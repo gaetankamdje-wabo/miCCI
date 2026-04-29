@@ -1,7 +1,7 @@
 # =============================================================================
-# miCCI v1.0.0 — 10_cci_interval.R
+# miCCI v0.5.0 — 10_cci_interval.R
 # S1: Interval CCI — VECTORISED via data.table joins
-# v1.0 change: cci_mid is returned as a true float (no integer coercion)
+# v0.5 change: cci_mid is returned as a true float (no integer coercion)
 # =============================================================================
 
 #' @export

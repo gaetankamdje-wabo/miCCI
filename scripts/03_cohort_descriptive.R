@@ -1,7 +1,7 @@
 # =============================================================================
-# miCCI v1.0.0 — Cohort Descriptive Analysis (single consistent cohort)
+# miCCI — Cohort Descriptive Analysis (single consistent cohort)
 # -----------------------------------------------------------------------------
-# Operates on the unsplit 2010-2024 cohort, matching the v1.0.0 pipeline.
+# Operates on the unsplit 2010-2024 cohort.
 # =============================================================================
 
 suppressPackageStartupMessages({
@@ -12,7 +12,7 @@ DATA_PATH  <- "A:/HLZ/Projekt/2025/comorbidity_gaetan/comorbidity_diagnoses_only
 OUTPUT_DIR <- "A:/HLZ/Promotionen/Gaetan Kamdje Wabo/Results CCI Model v050/cohort_descriptive"
 dir.create(OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
-cat("=== miCCI v1.0.0 — Cohort Descriptive Analysis ===\n\n")
+cat("=== miCCI — Cohort Descriptive Analysis ===\n\n")
 
 cat("[1/4] Loading parquet...\n")
 dt <- as.data.table(read_parquet(DATA_PATH))
@@ -85,6 +85,7 @@ p1 <- ggplot(dt, aes(x = age)) +
   geom_histogram(bins = 50, fill = "#2C7BB6", color = "white", linewidth = 0.15, alpha = 0.9) +
   geom_vline(xintercept = median(dt$age), linetype = "dashed",
              color = "#1B1B1B", linewidth = 0.8) +
+  scale_y_continuous(labels = scales::label_comma()) +
   labs(title = "Age Distribution - Consistent Cohort 2010-2024",
        subtitle = sprintf("n = %s encounters | dashed = median %.0f years",
                           format(nrow(dt), big.mark = ","), median(dt$age)),
@@ -98,6 +99,7 @@ p2 <- ggplot(dt[n_diagnoses <= icd_cap], aes(x = n_diagnoses)) +
                  linewidth = 0.15, alpha = 0.9) +
   geom_vline(xintercept = median(dt$n_diagnoses), linetype = "dashed",
              color = "#1B1B1B", linewidth = 0.8) +
+  scale_y_continuous(labels = scales::label_comma()) +
   labs(title = "Number of ICD-10-GM Codes per Encounter",
        subtitle = sprintf("Up to 99th percentile (<= %d codes) | dashed = median",
                           as.integer(icd_cap)),
@@ -111,6 +113,7 @@ p3 <- ggplot(dt[stay_in_days <= los_cap], aes(x = stay_in_days)) +
                  linewidth = 0.15, alpha = 0.9) +
   geom_vline(xintercept = median(dt$stay_in_days), linetype = "dashed",
              color = "#1B1B1B", linewidth = 0.8) +
+  scale_y_continuous(labels = scales::label_comma()) +
   labs(title = "Length of Stay - Consistent Cohort 2010-2024",
        subtitle = sprintf("Up to 99th percentile (<= %d days) | dashed = median",
                           as.integer(los_cap)),
@@ -122,6 +125,7 @@ p4 <- ggplot(tab_year, aes(x = year, y = N)) +
   geom_col(fill = "#2C3E50", width = 0.7, alpha = 0.9) +
   geom_text(aes(label = format(N, big.mark = ",")), vjust = -0.4, size = 3.5) +
   scale_x_continuous(breaks = tab_year$year) +
+  scale_y_continuous(labels = scales::label_comma()) +
   labs(title = "Annual Encounter Volume",
        subtitle = "Single consistent cohort - no train/calibration/validation split",
        x = "Year", y = "Encounters (n)") +

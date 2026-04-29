@@ -1,0 +1,39 @@
+Package: miCCI
+Title: Quality-Preserving Charlson Comorbidity Index Estimation Under Diagnosis Anonymisation
+Version: 1.0.0
+Authors@R: c(
+    person("Gaetan", "Kamdje Wabo",
+           email = "gaetan.kamdjewabo@medma.uni-heidelberg.de",
+           role  = c("aut", "cre")),
+    person("Piotr",  "Sokolowski", role = "aut"),
+    person("Fabian", "Siegel",     role = "aut"))
+Description: Five computational strategies for reconstructing the
+    Charlson Comorbidity Index (CCI) from truncated (anonymised)
+    ICD-10-GM codes. S1 deterministic interval, S2 inclusion-exclusion
+    expected value, S3 multiple imputation, S4 Bayesian Dirichlet
+    posterior median, and a cross-validated Super Learner meta
+    estimator (van der Laan, Polley & Hubbard 2007) that combines
+    S1 to S4 via non-negative least squares. Reference population
+    frequencies default to the German Federal Statistical Office
+    table 23131-01 (Destatis), but any data.table of the same schema
+    can be passed in. CCI mapping is the Quan et al. (2005) enhanced
+    ICD-10 algorithm. The pipeline is split into a heavy compute stage
+    and a fast reporting stage so that plots and tables can be
+    regenerated without recomputing the estimates.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Depends: R (>= 4.1.0)
+Imports:
+    data.table,
+    jsonlite
+Suggests:
+    arrow,
+    readxl,
+    ggplot2,
+    scales,
+    SuperLearner,
+    testthat (>= 3.0.0),
+    future.apply
+Config/testthat/edition: 3
+RoxygenNote: 7.3.2

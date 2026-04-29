@@ -1,7 +1,7 @@
 # =============================================================================
-# miCCI v1.0.0 — 30_cci_mi.R
+# miCCI v0.5.0 — 30_cci_mi.R
 # S3: MI-CCI — bulk imputation, vectorised gold per draw, mean across draws
-# v1.0 change: returns raw float vector (no round())
+# v0.5 change: returns raw float vector (no round())
 # =============================================================================
 
 #' @export
