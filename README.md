@@ -67,9 +67,9 @@ The CCI sums fixed weights over 17 comorbidity groups. Moreover, three severe gr
 
 ## Conceptual Overview
 
-![miCCI concept: truncated ICD-10-GM codes and Destatis subcode frequencies feed strategies S1 to S4, which a meta learner combines into one CCI estimate](man/figures/miCCI_concept_flowchart.svg)
+![miCCI concept: 3-character truncated ICD-10-GM codes and Destatis subcode frequencies feed strategies S1 to S4 and a meta learner, each of which yields a CCI estimate from the 3-character codes](man/figures/miCCI_concept_flowchart.svg)
 
-Two inputs enter at the top. The first is the set of truncated codes. The second is a table of subcode frequencies, Destatis by default or your own. S1 needs only to know which subcodes exist under each prefix. By contrast, S2, S3, and S4 also need to know how likely each subcode is, hence the dashed arrows. Each strategy then produces its own estimate. Finally, the meta learner combines the four estimates with non-negative weights that sum to one and are chosen by 10-fold cross-validation.
+Two inputs enter at the top. The first is the set of 3-character truncated codes. The second is a table of subcode frequencies, Destatis by default or your own. S1 needs only to know which subcodes exist under each prefix. By contrast, S2, S3, and S4 also need to know how likely each subcode is, hence the dashed arrows. Each strategy then yields its own CCI estimate from the 3-character codes, and any one of them can be used on its own. The meta learner adds a fifth option: it combines S1 to S4 with non-negative weights that sum to one and are chosen by 10-fold cross-validation. All five paths therefore land on a CCI estimate for the same 3-character codes.
 
 ## Estimation Strategies
 
