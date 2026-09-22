@@ -2,25 +2,49 @@ citHeader("To cite miCCI in publications, please use:")
 
 bibentry(
   bibtype  = "Article",
-  title    = paste0("Estimating the Charlson Comorbidity Index from ",
-                    "Anonymized ICD-10-GM Diagnosis Codes: ",
-                    "A Multi-Strategy Imputation Framework"),
+  title    = paste0("Estimating the Charlson Comorbidity Index From ",
+                    "Privacy-Truncated Diagnosis Codes: Methodological Study ",
+                    "Evaluating Computational Strategies in 507,949 ",
+                    "Inpatient Encounters"),
   author   = c(person("Gaetan", "Kamdje Wabo"),
-               person("Piotr",  "Sokolowski"),
-               person("Mahboubeh", "Jannesari"),
+               person(c("Piotr", "P"), "Sokolowski"),
+               person("Mahboubeh", "Jannesari Ladani"),
                person("Nandhini", "Santhanam"),
                person("Michael", "Hagmann"),
                person("Thomas", "Ganslandt"),
                person("Fabian", "Siegel")),
+  journal  = "JMIR Preprints",
+  year     = "2026",
+  note     = "Preprint 107041, 14/07/2026",
+  doi      = "10.2196/preprints.107041",
+  url      = "https://preprints.jmir.org/preprint/107041",
+  textVersion = paste0(
+    "Kamdje Wabo G, Sokolowski PP, Jannesari Ladani M, Santhanam N, ",
+    "Hagmann M, Ganslandt T, Siegel F. Estimating the Charlson Comorbidity ",
+    "Index From Privacy-Truncated Diagnosis Codes: Methodological Study ",
+    "Evaluating Computational Strategies in 507,949 Inpatient Encounters. ",
+    "JMIR Preprints. 14/07/2026:107041. doi:10.2196/preprints.107041")
+)
+
+bibentry(
+  bibtype  = "Article",
+  title    = paste0("Developing Country-Specific Charlson Comorbidity Index ",
+                    "Mappings for Use With German Administrative Data: ",
+                    "Methodological Comparative Study"),
+  author   = c(person(c("Piotr", "P"), "Soko\u0142owski"),
+               person("Michael", "Hagmann"),
+               person(c("M", "E"), "Maros"),
+               person("Gaetan", "Kamdje Wabo"),
+               person(c("J", "M"), "Meerjanssen"),
+               person("Fabian", "Siegel")),
   journal  = "JMIR Medical Informatics",
   year     = "2026",
-  note     = "Manuscript submitted",
+  volume   = "14",
+  pages    = "e93923",
+  doi      = "10.2196/93923",
   textVersion = paste0(
-    "Kamdje Wabo G, Sokolowski P, Jannesari M, Santhanam N, ",
-    "Hagmann M, Ganslandt T, Siegel F. ",
-    "Estimating the Charlson Comorbidity Index from ",
-    "Anonymized ICD-10-GM Diagnosis Codes: ",
-    "A Multi-Strategy Imputation Framework. ",
-    "JMIR Medical Informatics. 2026 (manuscript submitted)."
-  )
+    "Soko\u0142owski PP, Hagmann M, Maros ME, Kamdje Wabo G, Meerjanssen JM, ",
+    "Siegel F. Developing Country-Specific Charlson Comorbidity Index ",
+    "Mappings for Use With German Administrative Data: Methodological ",
+    "Comparative Study. JMIR Med Inform. 2026;14:e93923. doi:10.2196/93923")
 )

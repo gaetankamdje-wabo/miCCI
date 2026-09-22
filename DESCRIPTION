@@ -1,6 +1,6 @@
 Package: miCCI
 Title: Quality-Preserving Charlson Comorbidity Index Estimation Under Diagnosis Truncation
-Version: 1.1.0
+Version: 1.0.0
 Authors@R: c(
     person("Gaetan", "Kamdje Wabo",
            email = "gaetan.kamdjewabo@medma.uni-heidelberg.de",
