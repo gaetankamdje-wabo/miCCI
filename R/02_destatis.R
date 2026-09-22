@@ -46,12 +46,11 @@ load_destatis <- function(url   = "https://www.destatis.de/static/DE/dokumente/5
   on.exit(unlink(tmp), add = TRUE)
   utils::download.file(url, tmp, mode = "wb", quiet = quiet)
 
-  age_labels <- c(
-    "unter 1", "1 - 5", "5 - 10", "10 - 15", "15-18", "18-20", "20 - 25",
-    "25 - 30", "30 - 35", "35 - 40", "40 - 45", "45 - 50", "50 - 55",
-    "55 - 60", "60 - 65", "65 - 70", "70 - 75", "75 - 80", "80 - 85",
-    "85 - 90", "90 - 95", "95 u. \u00e4lter"
-  )
+  # Single source of truth, shared with age_to_bin_index() (see 00_utils.R).
+  # Sheet 23131-01 is (ICD-10 four-character code) x (sex) x (total + 22 age
+  # bands); the sex rows are aggregated below, the age bands are retained and
+  # become the age-conditioned prior.
+  age_labels <- .MICCI_AGE_BANDS
 
   raw <- readxl::read_excel(tmp, sheet = "23131-01", col_names = FALSE)
   dat <- as.data.frame(raw[-(seq_len(4L)), ])
@@ -160,11 +159,37 @@ precompute_lookups <- function(freq_table, quan_map) {
     total <- sum(child_freqs$freq_total, na.rm = TRUE)
     child_freqs[, prob := if (total > 0) freq_total / total else 0]
 
+    # Age-conditioned prior. One column per Destatis age band, each column
+    # normalised over the children of this prefix, so column a holds
+    # P(subcode | prefix, age band a). A band with no recorded case for this
+    # prefix yields an all-zero column; `age_ok` marks those so callers fall
+    # back to the marginal instead of dividing by zero.
+    child_prob_age <- NULL
+    age_ok <- rep(FALSE, length(.MICCI_AGE_BANDS))
+    if (all(.MICCI_AGE_BANDS %in% names(freq_table))) {
+      am <- as.matrix(
+        freq_table[match(child_freqs$code_nodot, code_nodot),
+                   .SD, .SDcols = .MICCI_AGE_BANDS]
+      )
+      am[is.na(am)] <- 0
+      col_tot <- colSums(am)
+      age_ok  <- col_tot > 0
+      if (any(age_ok)) {
+        am[, age_ok] <- sweep(am[, age_ok, drop = FALSE], 2L,
+                              col_tot[age_ok], "/")
+      }
+      am[, !age_ok] <- 0
+      dimnames(am) <- list(child_freqs$code_nodot, .MICCI_AGE_BANDS)
+      child_prob_age <- am
+    }
+
     assign(pref,
-           list(group_status = group_status,
-                child_freqs  = child_freqs,
-                child_groups = child_groups,
-                n_children   = length(children)),
+           list(group_status   = group_status,
+                child_freqs    = child_freqs,
+                child_groups   = child_groups,
+                child_prob_age = child_prob_age,
+                age_ok         = age_ok,
+                n_children     = length(children)),
            envir = cache)
   }
 
@@ -188,6 +213,105 @@ get_prefix_cache <- function(prefix_3char, cache) {
     get(pref, envir = cache, inherits = FALSE)
   else
     NULL
+}
+
+# =============================================================================
+# Donor pools: the single place where "what can this prefix stand for?" is
+# answered. Previously each strategy answered it separately and they
+# disagreed: S1 and S2 dropped a prefix that had no children in the reference
+# table, while S3 and S4 fell back to the prefix itself. That divergence is
+# exactly why AIDS (B20-B24, which carry no four-character children in Destatis)
+# scored zero under S1 and S2 but scored correctly under S3 and S4. It is also
+# the undefined behaviour when every subcode of a prefix falls in the silent
+# gap, since a prefix whose children are all absent from Destatis is precisely
+# a prefix with no rows in Destatis.
+#
+# One helper now owns the decision, with three explicit outcomes:
+#
+#   resolved   - the reference table lists children; draw from them.
+#   degenerate - the reference table lists no children, so the three-character
+#                prefix stands for itself with probability 1. This is not an
+#                error and not a zero: a three-character ICD-10-GM code is
+#                itself codeable and scoreable, and dropping it would silently
+#                discard a real diagnosis.
+#   empty      - no codeable content at all (blank input). Contributes nothing.
+# =============================================================================
+
+#' Donor pool for one three-character prefix.
+#'
+#' @param prefix_3char three-character ICD prefix.
+#' @param cache   output of `precompute_lookups()`.
+#' @param age_idx optional 1-based Destatis age-band index (see
+#'   `age_to_bin_index()`). When supplied and the band carries mass for this
+#'   prefix, the age-conditioned probabilities are returned; otherwise the
+#'   marginal is used and the fallback is flagged in the `age_fallback`
+#'   attribute so the pipeline can count how often it happened.
+#' @return data.table with `code_nodot` and `prob`, carrying attributes
+#'   `status` and `age_fallback`.
+#' @export
+prefix_pool <- function(prefix_3char, cache, age_idx = NULL) {
+  pref <- substr(drop_dot(prefix_3char), 1L, 3L)
+  out_degenerate <- function() {
+    d <- data.table(code_nodot = pref, prob = 1)
+    setattr(d, "status", "degenerate")
+    setattr(d, "age_fallback", FALSE)
+    d
+  }
+  if (nchar(pref) < 3L) {
+    d <- data.table(code_nodot = character(0L), prob = numeric(0L))
+    setattr(d, "status", "empty"); setattr(d, "age_fallback", FALSE)
+    return(d)
+  }
+
+  pc <- get_prefix_cache(pref, cache)
+  if (is.null(pc)) return(out_degenerate())
+
+  marg <- pc$child_freqs[prob > 0, .(code_nodot, prob)]
+  if (nrow(marg) == 0L) return(out_degenerate())
+
+  fallback <- FALSE
+  if (!is.null(age_idx) && !is.na(age_idx) && !is.null(pc$child_prob_age) &&
+      isTRUE(pc$age_ok[age_idx])) {
+    # drop = FALSE and an explicit rownames lookup. Subsetting a column of a
+    # ONE-ROW matrix silently discards the dimnames, so relying on names() here
+    # would hand back a zero-length code vector beside a length-one
+    # probability for every prefix that has a single child in the reference
+    # table. That is a large share of prefixes, and the result is a malformed
+    # donor pool rather than an error.
+    p  <- as.numeric(pc$child_prob_age[, age_idx, drop = FALSE])
+    cn <- rownames(pc$child_prob_age)
+    keep <- p > 0 & !is.na(p)
+    if (any(keep) && length(cn) == length(p)) {
+      d <- data.table(code_nodot = cn[keep], prob = p[keep])
+      setattr(d, "status", "resolved"); setattr(d, "age_fallback", FALSE)
+      return(d)
+    }
+    fallback <- TRUE
+  } else if (!is.null(age_idx) && !is.na(age_idx)) {
+    fallback <- TRUE
+  }
+
+  d <- copy(marg)
+  setattr(d, "status", "resolved")
+  setattr(d, "age_fallback", fallback)
+  d
+}
+
+#' Charlson group status of a degenerate prefix.
+#'
+#' A degenerate prefix has exactly one candidate code, itself. So a group is
+#' either certain (the prefix matches it) or absent. There is no `possible`
+#' state, because there is nothing to be uncertain between.
+#' @keywords internal
+.degenerate_status <- function(pref, group_names, all_pats) {
+  st <- setNames(rep("none", length(group_names)), group_names)
+  p0 <- drop_dot(pref)
+  for (gk in group_names) {
+    pats <- all_pats[[gk]]
+    if (length(pats) == 0L) next
+    if (any(startsWith(p0, pats) | startsWith(pats, p0))) st[gk] <- "certain"
+  }
+  st
 }
 
 #' Per-subcode probabilities for a three-character prefix, optionally

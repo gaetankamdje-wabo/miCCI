@@ -23,10 +23,14 @@
 #' @return list with element `mi_cci`.
 #' @export
 cci_mi <- function(icd_anon, quan_map, cache,
-                   age = NULL, m = 20L, seed = 42L) {
+                   age = NULL, m = 20L, seed = 42L,
+                   preserve_multiplicity = TRUE) {
   # Defer to batch on length-1 input so the two paths cannot disagree.
-  one <- data.table(diagnosen = paste(unique(icd3(icd_anon)), collapse = "|"))
-  v <- cci_mi_batch(one, quan_map, cache, m = m, seed = seed)
+  codes <- truncate_icd(icd_anon, preserve_multiplicity = preserve_multiplicity)
+  one <- data.table(diagnosen = paste(codes, collapse = "|"))
+  v <- cci_mi_batch(one, quan_map, cache, m = m, seed = seed,
+                    age_idx = if (is.null(age)) NULL else age_to_bin_index(age),
+                    preserve_multiplicity = preserve_multiplicity)
   list(mi_cci = unname(v[1L]))
 }
 
@@ -44,33 +48,60 @@ cci_mi <- function(icd_anon, quan_map, cache,
 #' @export
 cci_mi_batch <- function(dt, quan_map, cache,
                          m = 20L, seed = 42L,
-                         return_group_count = FALSE) {
+                         return_group_count = FALSE,
+                         age_idx = NULL,
+                         preserve_multiplicity = TRUE,
+                         return_rounds = FALSE) {
   pl <- build_pattern_lookup(quan_map)
   dl <- build_dep_lookup(quan_map)
   n  <- nrow(dt)
 
+  # One prefix slot per coded diagnosis position when multiplicity is kept, so
+  # an encounter carrying E11 twice draws two subcodes and can activate the
+  # group from either. Collapsing to unique() caps the draw at one subcode per
+  # prefix and undercounts comorbidities from the same ICD-10 block.
   dx_list <- strsplit(as.character(dt$diagnosen), "\\|+")
   code_sets <- lapply(dx_list, function(x) {
-    unique(substr(toupper(gsub("[^A-Z0-9]", "", x)), 1L, 3L))
+    p <- substr(toupper(gsub("[^A-Z0-9]", "", x)), 1L, 3L)
+    p <- p[nchar(p) >= 3L]
+    if (preserve_multiplicity) p else unique(p)
   })
-  code_sets <- lapply(code_sets, function(x) x[nchar(x) >= 3L])
 
-  all_prefs <- unique(unlist(code_sets, use.names = FALSE))
+  # Donor pools are keyed by prefix AND age band, so an encounter with a known
+  # age draws from P(subcode | prefix, age band) instead of the marginal.
+  ak_vec <- if (is.null(age_idx)) rep(0L, n) else {
+    a <- as.integer(age_idx); a[is.na(a)] <- 0L; a
+  }
+  key_sets <- lapply(seq_len(n), function(i) {
+    if (length(code_sets[[i]]) == 0L) character(0L)
+    else paste0(code_sets[[i]], "@", ak_vec[i])
+  })
+
+  all_keys <- unique(unlist(key_sets, use.names = FALSE))
   donor_pools <- list()
-  for (pref in all_prefs) {
-    pc <- get_prefix_cache(pref, cache)
-    if (is.null(pc)) {
-      donor_pools[[pref]] <- data.table(code_nodot = pref, prob = 1)
-    } else {
-      p <- pc$child_freqs[prob > 0]
-      donor_pools[[pref]] <- if (nrow(p) > 0L) p else data.table(code_nodot = pref, prob = 1)
-    }
+  n_degenerate <- 0L; n_agefall <- 0L
+  for (key in all_keys) {
+    parts <- strsplit(key, "@", fixed = TRUE)[[1L]]
+    pref  <- parts[1L]; ak <- as.integer(parts[2L])
+    pool  <- prefix_pool(pref, cache, age_idx = if (ak == 0L) NULL else ak)
+    if (nrow(pool) == 0L) pool <- data.table(code_nodot = pref, prob = 1)
+    if (identical(attr(pool, "status", exact = TRUE), "degenerate"))
+      n_degenerate <- n_degenerate + 1L
+    if (isTRUE(attr(pool, "age_fallback", exact = TRUE)))
+      n_agefall <- n_agefall + 1L
+    donor_pools[[key]] <- pool
   }
 
-  message(sprintf("S3: n=%d encounters, %d unique prefixes, m=%d",
-                  n, length(all_prefs), m))
+  message(sprintf(paste0("S3: n=%d encounters, %d prefix-by-age pools, m=%d",
+                         " (%d degenerate, %d age fallbacks)"),
+                  n, length(all_keys), m, n_degenerate, n_agefall))
 
   cci_sum <- numeric(n)
+  # Per-round scores, kept only on request. Round r consumes the same random
+  # numbers whatever m is, so the first k columns of an m-round run ARE the
+  # k-round run. The sensitivity analysis exploits that to evaluate a whole
+  # grid of m from a single run of the largest one.
+  rounds <- if (return_rounds) matrix(0, nrow = n, ncol = m) else NULL
   group_count <- if (return_group_count)
     integer(0L) else NULL  # accumulated below
   if (return_group_count) {
@@ -80,10 +111,10 @@ cci_mi_batch <- function(dt, quan_map, cache,
   .with_local_seed(seed, {
     for (imp in seq_len(m)) {
       imputed_dx <- vapply(seq_len(n), function(i) {
-        prefs <- code_sets[[i]]
-        if (length(prefs) == 0L) return("")
-        drawn <- vapply(prefs, function(pref) {
-          pool <- donor_pools[[pref]]
+        keys <- key_sets[[i]]
+        if (length(keys) == 0L) return("")
+        drawn <- vapply(keys, function(key) {
+          pool <- donor_pools[[key]]
           add_dot4(pool$code_nodot[sample.int(nrow(pool), 1L, prob = pool$prob)])
         }, character(1L))
         paste(drawn, collapse = "|")
@@ -98,10 +129,13 @@ cci_mi_batch <- function(dt, quan_map, cache,
           group_count_dt <- rbindlist(list(group_count_dt, ga), use.names = TRUE, fill = TRUE)
         }
       }
-      cci_sum <- cci_sum + cci_gold_batch(imp_dt, quan_map, pl, dl)
+      sc <- cci_gold_batch(imp_dt, quan_map, pl, dl)
+      cci_sum <- cci_sum + sc
+      if (return_rounds) rounds[, imp] <- sc
     }
   })
 
+  if (return_rounds) return(rounds)
   out <- cci_sum / m
   if (return_group_count) {
     gp <- group_count_dt[, .(p = sum(n_active) / m), by = .(idx, gk)]

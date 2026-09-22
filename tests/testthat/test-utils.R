@@ -21,8 +21,20 @@ test_that("split_icd splits and drops short codes", {
   expect_equal(miCCI:::split_icd("AB"), character(0L))
 })
 
-test_that("truncate_icd reduces to three-char prefixes uniquely", {
-  expect_equal(sort(miCCI:::truncate_icd(c("E11.40","E11.90","N18.4"))),
+test_that("truncate_icd preserves one prefix slot per coded diagnosis", {
+  # Changed deliberately: a truncated release carries one row per coded
+  # diagnosis, and collapsing repeats caps how many subcodes S3 and S4 can draw
+  # from the same prefix. The old uniqueness assertion is now the opt-in path.
+  expect_equal(miCCI:::truncate_icd(c("E11.40","E11.90","N18.4")),
+               c("E11","E11","N18"))
+  expect_equal(miCCI:::truncate_icd(c("E11.40","E11.90","N18.4"),
+                                    preserve_multiplicity = FALSE),
+               c("E11","N18"))
+})
+
+test_that("truncate_icd reduces to three-char prefixes uniquely when asked", {
+  expect_equal(sort(miCCI:::truncate_icd(c("E11.40","E11.90","N18.4"),
+                                         preserve_multiplicity = FALSE)),
                sort(c("E11","N18")))
 })
 

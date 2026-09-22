@@ -14,6 +14,12 @@
   "75 - 80", "80 - 85", "85 - 90", "90 - 95"
 )
 
+# The 22 Destatis 23131-01 age-band column headers, in sheet order. This is the
+# single source of truth: the loader names its columns from it and the
+# age-conditioned prior indexes its probability matrix by it, so the two can
+# never drift apart.
+.MICCI_AGE_BANDS <- c("unter 1", .MICCI_AGE_LABELS, "95 u. \u00e4lter")
+
 #' Normalise an ICD code (uppercase, comma -> dot, strip non-coding chars).
 #'
 #' @param x character vector of raw ICD-10-GM codes.
@@ -87,6 +93,18 @@ age_to_bin <- function(age) {
   out
 }
 
+#' Map a numeric age to the 1-based index of its Destatis age band.
+#'
+#' Same boundary convention as `age_to_bin()`, but returns the column position
+#' in `.MICCI_AGE_BANDS` so the age-conditioned prior can index its probability
+#' matrix without a string join. `NA_integer_` for a missing or unparseable age,
+#' which every caller treats as "use the marginal prior".
+#' @keywords internal
+age_to_bin_index <- function(age) {
+  lbl <- age_to_bin(age)
+  match(lbl, .MICCI_AGE_BANDS)
+}
+
 #' Split a pipe-separated ICD-code string into a normalised character vector.
 #'
 #' Handles single and double pipe separators ("|" and "||"). Codes shorter
@@ -99,10 +117,45 @@ split_icd <- function(x) {
   codes[nchar(codes) >= 3L]
 }
 
-#' Truncate ICD codes to their three-character chapter, mimicking the
-#' anonymisation used in shared statutory data.
+#' Truncate ICD codes to their three-character prefix, mimicking the
+#' privacy-preserving truncation used in shared statutory data.
+#'
+#' @param codes character vector of full-length ICD-10-GM codes.
+#' @param preserve_multiplicity if TRUE (new default), one prefix slot
+#'   is kept per original diagnosis position, so an encounter coded E11.20 and
+#'   E11.74 yields `c("E11", "E11")`. If FALSE, the previous behaviour is
+#'   restored and repeated prefixes collapse to one.
+#'
+#'   Multiplicity matters because a truncated release still carries one row per
+#'   coded diagnosis. Collapsing them discards the information that the prefix
+#'   was coded twice, which caps how many subcodes S3 and S4 can draw from the
+#'   same prefix and systematically undercounts comorbidities arising from the
+#'   same ICD-10 block.
 #' @keywords internal
-truncate_icd <- function(codes) unique(icd3(codes))
+truncate_icd <- function(codes, preserve_multiplicity = TRUE) {
+  p <- icd3(codes)
+  p <- p[nchar(p) >= 3L]
+  if (preserve_multiplicity) p else unique(p)
+}
+
+#' Round half away from zero, the convention used in clinical reporting.
+#'
+#' `base::round()` rounds halves to even, so 0.5 and 1.5 both land on 0 and 2
+#' respectively. Applied to the half-integer output of S1 that asymmetry
+#' concentrates mass on even bins and shows up in a histogram as a
+#' distributional pattern that is really an artefact of the rounding rule.
+#' This helper rounds halves consistently upward in magnitude instead, and is
+#' the only rounding used for binning anywhere in the package.
+#' @keywords internal
+.round_half_up <- function(x) {
+  sign(x) * floor(abs(x) + 0.5)
+}
+
+#' Is x an exact integer (within floating-point tolerance)?
+#' @keywords internal
+.is_int_valued <- function(x, tol = 1e-8) {
+  !is.na(x) & abs(x - round(x)) < tol
+}
 
 #' Null-coalescing operator: returns `a` unless it is NULL.
 #' @keywords internal
