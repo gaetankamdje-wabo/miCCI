@@ -77,6 +77,79 @@ test_that("the S1 envelope still contains the gold score", {
   }
 })
 
+# -----------------------------------------------------------------------------
+# Point 16. The S1 bounds apply all three Quan exclusion rules, in both code
+# paths, and the upper bound is a conservative envelope by design.
+#   E10.9 -> dm_simple only (child certain)   E11.2 / E11.9 -> parent / child
+#   K70.3 / K70.4 -> liver child / parent     C16.0 / C78.0 -> malignancy pair
+#   I13.0 -> hf, I13.1 -> kidney, I13.9 -> none (nonhierarchical alternatives)
+.s1_fixture <- function() {
+  codes <- c("E10.9", "E11.2", "E11.9", "K70.3", "K70.4",
+             "C16.0", "C78.0", "I13.0", "I13.1", "I13.9")
+  freq <- data.table(code = codes, freq_total = 100)
+  freq[, code_nodot := gsub(".", "", code, fixed = TRUE)]
+  freq[, code3      := substr(code_nodot, 1L, 3L)]
+  setkey(freq, code_nodot)
+  qm <- .test_quan()
+  list(freq = freq, quan_map = qm,
+       cache = suppressMessages(precompute_lookups(freq, qm)))
+}
+
+.s1_both_paths <- function(x, f) {
+  b <- cci_interval_batch(data.table(diagnosen = x), f$quan_map, f$cache)
+  s <- cci_interval(strsplit(x, "|", fixed = TRUE)[[1L]], f$quan_map, f$cache)
+  expect_equal(c(s$cci_min, s$cci_max), c(b$cci_min[1L], b$cci_max[1L]),
+               info = paste("single vs batch:", x))
+  c(min = b$cci_min[1L], max = b$cci_max[1L])
+}
+
+test_that("S1 applies all three Quan exclusion rules to both bounds, in both paths", {
+  f <- .s1_fixture()
+  # Within one prefix: no subcode scores child + parent together.
+  expect_equal(.s1_both_paths("K70", f), c(min = 0, max = 3))   # not 1 + 3
+  expect_equal(.s1_both_paths("E11", f), c(min = 0, max = 2))   # not 1 + 2
+  # Across prefixes, both certain: nonmetastatic is suppressed in both bounds.
+  expect_equal(.s1_both_paths("C16|C78", f), c(min = 6, max = 6))  # not 2 + 6
+  # Child certain, parent only possible: the lower bound keeps the child,
+  # the upper bound suppresses it in favour of the heavier parent.
+  expect_equal(.s1_both_paths("E10|E11", f), c(min = 1, max = 2))
+})
+
+test_that("S1 upper bound stays conservative for nonhierarchical alternatives (by design)", {
+  f <- .s1_fixture()
+  # One I13 position realises hf (1) or kidney (2), never both: reachable
+  # maximum 2. The envelope admits both groups, so cci_max = 3.
+  gold_one <- vapply(c("I13.0", "I13.1", "I13.9"),
+                     function(cc) cci_gold(cc, f$quan_map)$cci, numeric(1L))
+  expect_equal(max(gold_one), 2)
+  expect_equal(.s1_both_paths("I13", f), c(min = 0, max = 3))
+  # With two I13 positions both groups are reachable, and the bound is tight.
+  expect_equal(cci_gold(c("I13.0", "I13.1"), f$quan_map)$cci, 3)
+})
+
+test_that("S1 envelope contains every reachable reference score (exhaustive)", {
+  f <- .s1_fixture()
+  kids <- split(f$freq$code, f$freq$code3)
+  prefs <- names(kids)
+  encs <- c(as.list(prefs),
+            unlist(lapply(seq_along(prefs), function(i)
+              lapply(i:length(prefs), function(j) prefs[c(i, j)])),
+              recursive = FALSE))
+  n_tight <- 0L
+  for (e in encs) {
+    b <- cci_interval_batch(data.table(diagnosen = paste(e, collapse = "|")),
+                            f$quan_map, f$cache)
+    grid <- expand.grid(kids[e], stringsAsFactors = FALSE)
+    g <- apply(grid, 1L, function(r) cci_gold(unname(r), f$quan_map)$cci)
+    expect_true(all(b$cci_min[1L] <= g & g <= b$cci_max[1L]),
+                info = paste(e, collapse = "|"))
+    n_tight <- n_tight + (max(g) == b$cci_max[1L])
+  }
+  # The bound is tight wherever no single position carries nonhierarchical
+  # alternatives, so most enumerated encounters reach it exactly.
+  expect_gt(n_tight, length(encs) / 2)
+})
+
 test_that("S2 returns the true expectation over the subcode support", {
   f <- .rev_fixture()
   # Brute force: enumerate every subcode of E11, score it, weight by probability.
