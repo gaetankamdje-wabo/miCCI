@@ -12,8 +12,10 @@
 #' Required columns: `falnr`, `age`, `date_admission`, `date_discharge`,
 #' `stay_in_days`, `diagnosen` (pipe-separated ICD-10-GM codes).
 #'
-#' Duplicate `falnr` rows are dropped silently in v0.x; v1.x reports the
-#' drop count so readmissions are not lost without warning.
+#' Every selection step, from the raw extract to the final cohort, is
+#' counted. The counts are printed and attached to the result as the
+#' attribute `selection_flow` (columns `step`, `excluded`, `pct_of_raw`,
+#' `remaining`).
 #'
 #' @param path       parquet file path.
 #' @param date_from  inclusive lower admission-date bound.
@@ -27,6 +29,17 @@ load_cohort <- function(path,
   if (!isTRUE(requireNamespace("arrow", quietly = TRUE)))
     stop("load_cohort() requires the 'arrow' package.")
   dt <- as.data.table(arrow::read_parquet(path))
+
+  # Selection flow: one row per exclusion step, counted on the rows that
+  # reached that step. Steps are applied in the order listed.
+  flow <- list()
+  .step <- function(label) {
+    prev <- if (length(flow)) flow[[length(flow)]]$remaining else nrow(dt)
+    flow[[length(flow) + 1L]] <<- data.table(step = label,
+                                             excluded  = prev - nrow(dt),
+                                             remaining = nrow(dt))
+  }
+  .step("Raw extract (rows)")
   keep <- c("falnr", "age", "date_admission", "date_discharge",
             "stay_in_days", "diagnosen")
   miss <- setdiff(keep, names(dt))
@@ -58,13 +71,18 @@ load_cohort <- function(path,
   dt[, year           := as.integer(format(date_admission, "%Y"))]
   dt[, diagnosen      := as.character(diagnosen)]
   dt <- dt[!is.na(date_admission) & !is.na(year)]
+  .step("Missing or unparseable admission date")
   dt <- dt[!is.na(diagnosen) & diagnosen != "" & diagnosen != "NA"]
+  .step("No diagnosis code recorded")
   dt[, stay_in_days := as.numeric(stay_in_days)]
   dt <- dt[!is.na(stay_in_days) & stay_in_days >= 0]
+  .step("Missing or negative length of stay")
   dt[, age := as.numeric(age)]
   dt <- dt[!is.na(age) & age >= 0]
+  .step("Missing or negative age")
   dt <- dt[date_admission >= as.Date(date_from) &
            date_admission <= as.Date(date_to)]
+  .step(sprintf("Admission outside %s to %s", date_from, date_to))
   dt[, n_diagnoses := lengths(strsplit(diagnosen, "\\|+"))]
 
   # `falnr` is the encounter key: one row per discharge episode. Dropping
@@ -72,13 +90,28 @@ load_cohort <- function(path,
   # readmissions - a readmission carries its own falnr and survives. The count
   # is reported so the claim is checkable rather than assumed.
   n_before <- nrow(dt)
+  # Duplicates that disagree on the diagnosis string matter, because only the
+  # first row is kept. They are counted, not resolved.
+  dup <- dt[falnr %in% falnr[duplicated(falnr)], .(falnr, diagnosen)]
   dt <- unique(dt, by = "falnr")
+  .step("Duplicate row of an encounter number already present")
   n_after <- nrow(dt)
   if (n_before != n_after) {
     message(sprintf("load_cohort: %d duplicate rows of an already-present encounter number dropped (%.3f%%); distinct encounters retained: %d",
                     n_before - n_after, 100 * (n_before - n_after) / n_before,
                     n_after))
+    n_conflict <- dup[, .(k = data.table::uniqueN(diagnosen)), by = falnr][k > 1L, .N]
+    message(sprintf("load_cohort: %d duplicated encounter numbers carried differing diagnosis strings; the first row was kept",
+                    n_conflict))
   }
+  flow <- rbindlist(flow)
+  flow[, pct_of_raw := round(100 * excluded / remaining[1L], 3L)]
+  flow[1L, `:=`(excluded = NA_integer_, pct_of_raw = NA_real_)]
+  setcolorder(flow, c("step", "excluded", "pct_of_raw", "remaining"))
+  message("load_cohort: selection flow\n",
+          paste(utils::capture.output(print(flow)), collapse = "\n"))
+  setattr(dt, "selection_flow", flow)
+
   if ("patient_id" %in% names(dt)) {
     np <- data.table::uniqueN(dt$patient_id)
     message(sprintf("Cohort: %d encounters from %d patients (%.2f encounters/patient), %d-%d",
@@ -103,7 +136,7 @@ load_cohort <- function(path,
 # the cohort fingerprint matches, the stage is skipped. The fingerprint
 # is the SHA-1 of the cohort row count, the first/last falnr and the
 # concatenated diagnoses of the first 100 rows - enough to detect any
-# accidental cohort change without hashing the entire 720k-row data.table.
+# accidental cohort change without hashing the entire cohort.
 .cohort_fingerprint <- function(dt, config = NULL) {
   s <- paste(nrow(dt),
              dt$falnr[1L], dt$falnr[nrow(dt)],
@@ -177,6 +210,7 @@ compute_predictions <- function(data_path,
 
   message("[1/8] Loading cohort")
   dt <- load_cohort(data_path, patient_col = patient_col)
+  selection_flow <- attr(dt, "selection_flow")
   if (!is.null(sample_size) && nrow(dt) > sample_size) {
     dt <- .with_local_seed(seed, dt[sample(.N, sample_size)])
     message(sprintf("  Subsampled to %d encounters", sample_size))
@@ -367,6 +401,7 @@ compute_predictions <- function(data_path,
     output_dir      = normalizePath(output_dir, mustWork = FALSE),
     freq_table      = freq_used_label,
     n_encounters    = nrow(preds),
+    selection_flow  = selection_flow,
     year_min        = as.integer(min(preds$year)),
     year_max        = as.integer(max(preds$year)),
     parameters      = list(

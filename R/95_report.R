@@ -6,31 +6,33 @@
 # table, plot, CI and stratified evaluation. 
 # =============================================================================
 
-# Figure output follows the JMIR Medical Informatics house style.
-#
-#   PNG only. The journal asks for high-resolution PNG or JPG with minimal
-#   compression and explicitly refuses vector or document formats for figures,
-#   so the PDF companion is not produced.
-#
-#   300 dpi, which is the resolution JMIR expects for line art and charts.
-#
-#   No caption, label or footnote baked into the image. JMIR pulls the caption
-#   from the submission metadata for the final publication and asks authors to
-#   remove any label or caption present in the image file. A caption rendered
-#   into the PNG would be duplicated at typesetting.
-#
-# Per-figure dimensions are kept as originally designed. A multi-panel figure
-# and a single-panel bar chart do not read well at the same aspect ratio.
-.MICCI_FIG_DPI <- 300
+# Figure output
 
-#' Save a ggplot as a single high-resolution PNG, JMIR house style.
+
+.MICCI_FIG_DPI <- 300
+.MICCI_FIG_PX  <- 1200L
+
+#' Save a ggplot as a single 1200 x 1200 px PNG, JMIR house style.
+#'
+#' With `ragg` installed the file carries 300 dpi metadata and the layout is
+#' scaled down from the design canvas. Without it the resolution is lowered
+#' instead, which yields the same pixels and layout at a smaller dpi tag.
 #' @keywords internal
 .save_plot <- function(p, base_path, width, height) {
   if (!isTRUE(requireNamespace("ggplot2", quietly = TRUE)))
     stop("build_report() requires the 'ggplot2' package.")
-  ggplot2::ggsave(paste0(base_path, ".png"), p,
-                  width = width, height = height,
-                  dpi = .MICCI_FIG_DPI, bg = "white")
+  side <- max(width, height)
+  out  <- paste0(base_path, ".png")
+  if (isTRUE(requireNamespace("ragg", quietly = TRUE))) {
+    ggplot2::ggsave(out, p, device = ragg::agg_png,
+                    width = .MICCI_FIG_PX, height = .MICCI_FIG_PX,
+                    units = "px", dpi = .MICCI_FIG_DPI,
+                    scaling = .MICCI_FIG_PX / (side * .MICCI_FIG_DPI),
+                    bg = "white")
+  } else {
+    ggplot2::ggsave(out, p, width = side, height = side, units = "in",
+                    dpi = .MICCI_FIG_PX / side, bg = "white")
+  }
 }
 
 #' Strategy display: column name -> pretty label.
@@ -78,6 +80,10 @@
 #'   default suits the full cohort; lower it for a small test run, otherwise no
 #'   stratum qualifies and every stratified table comes back empty.
 #' @param parallel     if TRUE, parallelise the bootstrap (needs `future.apply`).
+#' @param figures_only if TRUE, skip every statistic and bootstrap and rebuild
+#'   the figures only. The tables a previous run wrote (tab_01, tab_03, tab_07
+#'   to tab_09, tab_13) are read from `input_dir`. Pass the `B`, `B_strata`
+#'   and `top_patterns` of that run, since they appear in figure subtitles.
 #' @return invisibly, list of tables and a vector of written file paths.
 #' @export
 build_report <- function(input_dir,
@@ -87,7 +93,8 @@ build_report <- function(input_dir,
                          top_patterns = 30L,
                          min_n        = 50L,
                          cluster_col  = "patient_id",
-                         parallel     = FALSE) {
+                         parallel     = FALSE,
+                         figures_only = FALSE) {
   if (!isTRUE(requireNamespace("ggplot2", quietly = TRUE)))
     stop("build_report() requires the 'ggplot2' package.")
   gg <- asNamespace("ggplot2")
@@ -143,64 +150,81 @@ build_report <- function(input_dir,
     add(paste0(bp, ".png"))
   }
 
-  message("[2/7] Bootstrap CIs (global per-strategy)")
-  global_ci <- bootstrap_strategies(preds, strategies,
-                                    B = B, seed = 42L,
-                                    cluster_col = cluster_col,
-                                    parallel = parallel)
-  save_csv(global_ci, "tab_01_strategy_metrics_ci.csv")
+  if (isTRUE(figures_only)) {
+    message(sprintf("[2-5/7] figures_only: reading saved tables from %s", input_dir))
+    rd <- function(name) {
+      f <- file.path(input_dir, name)
+      if (!file.exists(f))
+        stop(sprintf("figures_only = TRUE needs %s in %s", name, input_dir))
+      fread(f)
+    }
+    global_ci <- rd("tab_01_strategy_metrics_ci.csv")
+    qa_cov    <- rd("tab_03_qa_group_coverage.csv")
+    qa_exact  <- list(by_value = rd("tab_13_exact_agreement_by_value.csv"))
+    strat     <- list(chapter = rd("tab_07_stratified_chapter.csv"),
+                      group   = rd("tab_08_stratified_charlson_group.csv"),
+                      pattern = rd("tab_09_stratified_pattern.csv"))
+    desc_tab <- qa_dist <- qa_post <- NULL
+  } else {
+    message("[2/7] Bootstrap CIs (global per-strategy)")
+    global_ci <- bootstrap_strategies(preds, strategies,
+                                      B = B, seed = 42L,
+                                      cluster_col = cluster_col,
+                                      parallel = parallel)
+    save_csv(global_ci, "tab_01_strategy_metrics_ci.csv")
 
-  message("[3/7] Descriptive statistics")
-  desc_fn <- function(x, nm) data.table(
-    Source = nm, N = sum(!is.na(x)),
-    Min  = round(min(x, na.rm = TRUE), 3L),
-    Q1   = round(stats::quantile(x, 0.25, na.rm = TRUE), 3L),
-    Median = round(stats::median(x, na.rm = TRUE), 3L),
-    Mean = round(mean(x, na.rm = TRUE), 3L),
-    Q3   = round(stats::quantile(x, 0.75, na.rm = TRUE), 3L),
-    Max  = round(max(x, na.rm = TRUE), 3L),
-    SD   = round(stats::sd(x, na.rm = TRUE), 3L)
-  )
-  desc_tab <- rbind(
-    desc_fn(preds$cci_gold, "Gold Standard"),
-    rbindlist(lapply(names(strategies),
-                     function(c) desc_fn(preds[[c]], strategies[c])))
-  )
-  save_csv(desc_tab, "tab_02_descriptive_statistics.csv")
+    message("[3/7] Descriptive statistics")
+    desc_fn <- function(x, nm) data.table(
+      Source = nm, N = sum(!is.na(x)),
+      Min  = round(min(x, na.rm = TRUE), 3L),
+      Q1   = round(stats::quantile(x, 0.25, na.rm = TRUE), 3L),
+      Median = round(stats::median(x, na.rm = TRUE), 3L),
+      Mean = round(mean(x, na.rm = TRUE), 3L),
+      Q3   = round(stats::quantile(x, 0.75, na.rm = TRUE), 3L),
+      Max  = round(max(x, na.rm = TRUE), 3L),
+      SD   = round(stats::sd(x, na.rm = TRUE), 3L)
+    )
+    desc_tab <- rbind(
+      desc_fn(preds$cci_gold, "Gold Standard"),
+      rbindlist(lapply(names(strategies),
+                       function(c) desc_fn(preds[[c]], strategies[c])))
+    )
+    save_csv(desc_tab, "tab_02_descriptive_statistics.csv")
 
-  message("[4/7] QA (coverage, mass conservation, score distribution)")
-  qa_cov <- qa_group_coverage(preds, quan_map)
-  save_csv(qa_cov, "tab_03_qa_group_coverage.csv")
-  qa_dist <- qa_score_distribution(preds, names(strategies))
-  save_csv(qa_dist$frequency, "tab_04_qa_score_frequency.csv")
-  save_csv(qa_dist$ks,        "tab_05_qa_ks_distance.csv")
-  qa_post <- qa_posterior_coverage(preds, names(strategies))
-  save_csv(qa_post, "tab_06_qa_posterior_coverage.csv")
+    message("[4/7] QA (coverage, mass conservation, score distribution)")
+    qa_cov <- qa_group_coverage(preds, quan_map)
+    save_csv(qa_cov, "tab_03_qa_group_coverage.csv")
+    qa_dist <- qa_score_distribution(preds, names(strategies))
+    save_csv(qa_dist$frequency, "tab_04_qa_score_frequency.csv")
+    save_csv(qa_dist$ks,        "tab_05_qa_ks_distance.csv")
+    qa_post <- qa_posterior_coverage(preds, names(strategies))
+    save_csv(qa_post, "tab_06_qa_posterior_coverage.csv")
 
-  # Rounding-free view of the same distributional question (reviewer point 14).
-  qa_exact <- qa_exact_agreement(preds, names(strategies))
-  save_csv(qa_exact$by_value, "tab_13_exact_agreement_by_value.csv")
-  save_csv(qa_exact$summary,  "tab_14_exact_agreement_summary.csv")
+    # Rounding-free view of the same distributional question 
+    qa_exact <- qa_exact_agreement(preds, names(strategies))
+    save_csv(qa_exact$by_value, "tab_13_exact_agreement_by_value.csv")
+    save_csv(qa_exact$summary,  "tab_14_exact_agreement_summary.csv")
 
-  message("[5/7] Stratified evaluation (chapter / group / pattern)")
-  strat <- stratified_evaluation(preds, strategies, quan_map,
-                                 B = B_strata, top_patterns = top_patterns,
-                                 min_n = min_n, cluster_col = cluster_col,
-                                 parallel = parallel)
-  if (all(vapply(strat, nrow, integer(1L)) == 0L))
-    message(sprintf(paste0("  no stratum reached min_n = %d encounters, so the",
-                           " stratified tables are empty.\n",
-                           "  This is expected on a small test cohort.",
-                           " Lower it with MICCI_MIN_N for a test run."), min_n))
-  save_csv(strat$chapter, "tab_07_stratified_chapter.csv")
-  save_csv(strat$group,   "tab_08_stratified_charlson_group.csv")
-  save_csv(strat$pattern, "tab_09_stratified_pattern.csv")
-  win <- function(tbl) stratum_winners(tbl, preds = preds,
-                                      strategies = strategies,
-                                      B = B, cluster_col = cluster_col)
-  save_csv(win(strat$chapter), "tab_10_winners_chapter.csv")
-  save_csv(win(strat$group),   "tab_11_winners_group.csv")
-  save_csv(win(strat$pattern), "tab_12_winners_pattern.csv")
+    message("[5/7] Stratified evaluation (chapter / group / pattern)")
+    strat <- stratified_evaluation(preds, strategies, quan_map,
+                                   B = B_strata, top_patterns = top_patterns,
+                                   min_n = min_n, cluster_col = cluster_col,
+                                   parallel = parallel)
+    if (all(vapply(strat, nrow, integer(1L)) == 0L))
+      message(sprintf(paste0("  no stratum reached min_n = %d encounters, so the",
+                             " stratified tables are empty.\n",
+                             "  This is expected on a small test cohort.",
+                             " Lower it with MICCI_MIN_N for a test run."), min_n))
+    save_csv(strat$chapter, "tab_07_stratified_chapter.csv")
+    save_csv(strat$group,   "tab_08_stratified_charlson_group.csv")
+    save_csv(strat$pattern, "tab_09_stratified_pattern.csv")
+    win <- function(tbl) stratum_winners(tbl, preds = preds,
+                                        strategies = strategies,
+                                        B = B, cluster_col = cluster_col)
+    save_csv(win(strat$chapter), "tab_10_winners_chapter.csv")
+    save_csv(win(strat$group),   "tab_11_winners_group.csv")
+    save_csv(win(strat$pattern), "tab_12_winners_pattern.csv")
+  }
 
   message("[6/7] Generating publication plots")
 
@@ -258,9 +282,9 @@ build_report <- function(input_dir,
     gg$scale_x_continuous(breaks = seq(0, axis_max, 4)) +
     gg$scale_y_continuous(breaks = seq(0, axis_max, 4)) +
     gg$labs(
-      title    = "Predicted vs. Gold-Standard CCI",
+      title    = "Predicted vs. Reference-Standard CCI",
       subtitle = "Hex density on log10 scale; red dashed = identity.",
-      x = "Gold-Standard CCI", y = "Predicted CCI"
+      x = "Reference-standard CCI", y = "Predicted CCI"
     ) +
     .theme_micci(16) +
     gg$theme(legend.position = "right",
@@ -280,7 +304,7 @@ build_report <- function(input_dir,
     gg$scale_y_continuous(limits = c(0, NA),
                           expand = gg$expansion(mult = c(0, 0.05))) +
     gg$labs(title = "Temporal Stability: MAE by Calendar Year",
-            subtitle = "Lower is better. All strategies are training-free.",
+            subtitle = "Lower is better.",
             x = "Calendar year", y = "MAE") +
     .theme_micci(14) +
     gg$theme(axis.text.x = gg$element_text(angle = 30, hjust = 1))
@@ -368,10 +392,10 @@ build_report <- function(input_dir,
     gg$geom_hline(data = ba_stats, gg$aes(yintercept = loa_hi),
                   linetype = "dotted", color = "#0072B2", linewidth = 0.7) +
     gg$facet_wrap(~ label, ncol = 3) +
-    gg$labs(title = "Bland-Altman Agreement: Predicted - Gold",
+    gg$labs(title = "Bland-Altman Agreement: Predicted - Reference Standard",
             subtitle = "Dashed = bias  |  Dotted = 95% Limits of Agreement",
-            x = "Mean of Gold and Predicted CCI",
-            y = "Difference (Predicted - Gold)") +
+            x = "Mean of Reference-Standard and Predicted CCI",
+            y = "Difference (Predicted - Reference Standard)") +
     .theme_micci(14)
   save_fig(p5, "fig_05_bland_altman", 16, 10)
 
@@ -381,7 +405,8 @@ build_report <- function(input_dir,
                   variable.name = "ratio_type", value.name = "ratio")
   qa_long[, ratio_type := factor(ratio_type,
             levels = c("ratio_s1", "ratio_s2", "ratio_s3", "ratio_s4"),
-            labels = c("S1 / Gold", "S2 / Gold", "S3 / Gold", "S4 / Gold"))]
+            labels = c("S1 / Reference", "S2 / Reference",
+                       "S3 / Reference", "S4 / Reference"))]
   # A group the reference never activates has gold_mass 0 and therefore an
   # undefined ratio. Plotting it only produces a warning and an empty slot.
   n_na_ratio <- sum(is.na(qa_long$ratio))
@@ -390,10 +415,10 @@ build_report <- function(input_dir,
                     n_na_ratio))
     qa_long <- qa_long[!is.na(ratio)]
   }
-  qa_pal <- c("S1 / Gold" = unname(pal["S1 Interval"]),
-              "S2 / Gold" = unname(pal["S2 Probabilistic"]),
-              "S3 / Gold" = unname(pal["S3 MI-CCI"]),
-              "S4 / Gold" = unname(pal["S4 Bayesian"]))
+  qa_pal <- c("S1 / Reference" = unname(pal["S1 Interval"]),
+              "S2 / Reference" = unname(pal["S2 Probabilistic"]),
+              "S3 / Reference" = unname(pal["S3 MI-CCI"]),
+              "S4 / Reference" = unname(pal["S4 Bayesian"]))
   p6 <- gg$ggplot(qa_long, gg$aes(x = stats::reorder(group, pct_gold_active),
                                   y = ratio, fill = ratio_type)) +
     gg$geom_col(position = gg$position_dodge(width = 0.75),
@@ -403,8 +428,8 @@ build_report <- function(input_dir,
     gg$scale_fill_manual(values = qa_pal) +
     gg$coord_flip() +
     gg$labs(title = "Per-Group Mass Conservation",
-            subtitle = "Strategy mass divided by gold mass. Ratio 1 means perfect conservation.",
-            x = "Charlson group", y = "Mass ratio (Strategy / Gold)") +
+            subtitle = "Strategy mass divided by reference-standard mass. Ratio 1 means perfect conservation.",
+            x = "Charlson group", y = "Mass ratio (Strategy / Reference Standard)") +
     .theme_micci(13)
   save_fig(p6, "fig_06_qa_mass_conservation", 12, 9)
 
