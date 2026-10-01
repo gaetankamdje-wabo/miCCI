@@ -3,8 +3,9 @@
 # Destatis 23131-01 loader + per-prefix lookup precomputation.
 #
 # The user can either:
-#   (a) call load_destatis() to download the German Federal Statistical
-#       Office's age-stratified diagnosis-frequency table, or
+#   (a) call load_destatis() to read the German Federal Statistical
+#       Office's age-stratified diagnosis-frequency table bundled under
+#       inst/extdata/ (or download it, see load_destatis()), or
 #   (b) supply a custom data.table of the same schema via the `freq_table`
 #       argument of precompute_lookups(), which is how a site uses its own
 #       population frequencies instead of Destatis.
@@ -14,37 +15,56 @@
 # the URL gets a clean reload without restarting the session.
 .destatis_env <- new.env(parent = emptyenv())
 
-#' Download and parse Destatis 23131-01 (sex-aggregated, age-stratified).
+#' Read and parse Destatis 23131-01 (sex-aggregated, age-stratified).
 #'
 #' The table contains, per ICD-10-GM 4-character code, the national
 #' inpatient frequency by age band. miCCI uses it as the prior for S2 to S5.
 #'
-#' Network access is required on first call. Subsequent calls return the
-#' cached table unless `force = TRUE`.
+#' By default the workbook bundled at
+#' `inst/extdata/5231301237015_SB.xlsx` is read, so results are
+#' reproducible and no network access is needed. Subsequent calls return
+#' the cached table unless `force = TRUE`.
 #'
-#' @param url URL of the Destatis xlsx workbook. Defaults to the official
-#'   23131-01 publication URL.
+#' @param url Local path or URL of the Destatis xlsx workbook. `NULL`
+#'   (default) uses the bundled copy. To use the latest Destatis release
+#'   instead, pass the official publication URL:
+#'   https://www.destatis.de/static/DE/dokumente/5231301237015_SB.xlsx
 #' @param cache If TRUE, store the parsed table in a package-level
 #'   environment so further calls in the same session are free.
 #' @param force If TRUE, ignore the cache and reload (and reparse) from
-#'   the URL. Useful when Destatis releases an updated annual table.
+#'   `url`. Useful when Destatis releases an updated annual table.
 #' @param quiet Suppress download progress output.
 #'
 #' @return A data.table with columns `code`, `code_nodot`, `code3`,
 #'   `freq_total`, and one column per Destatis age band.
 #'
 #' @export
-load_destatis <- function(url   = "https://www.destatis.de/static/DE/dokumente/5231301237015_SB.xlsx",
+load_destatis <- function(url   = NULL,
                           cache = TRUE,
                           force = FALSE,
                           quiet = TRUE) {
+  # Bundled snapshot for reproducibility. To pull the current Destatis
+  # release instead, replace NULL above (or pass `url =`) with:
+  # "https://www.destatis.de/static/DE/dokumente/5231301237015_SB.xlsx"
+  if (is.null(url)) {
+    url <- system.file("extdata", "5231301237015_SB.xlsx", package = "miCCI")
+    if (!nzchar(url))
+      url <- file.path(getwd(), "inst", "extdata", "5231301237015_SB.xlsx")
+  }
+
   cache_key <- paste0("dt::", url)
   if (cache && !force && exists(cache_key, envir = .destatis_env, inherits = FALSE))
     return(get(cache_key, envir = .destatis_env, inherits = FALSE))
 
-  tmp <- tempfile(fileext = ".xlsx")
-  on.exit(unlink(tmp), add = TRUE)
-  utils::download.file(url, tmp, mode = "wb", quiet = quiet)
+  if (grepl("^https?://", url)) {
+    tmp <- tempfile(fileext = ".xlsx")
+    on.exit(unlink(tmp), add = TRUE)
+    utils::download.file(url, tmp, mode = "wb", quiet = quiet)
+  } else {
+    if (!file.exists(url))
+      stop("Destatis workbook not found: ", url)
+    tmp <- url
+  }
 
   # Single source of truth, shared with age_to_bin_index() (see 00_utils.R).
   # Sheet 23131-01 is (ICD-10 four-character code) x (sex) x (total + 22 age
